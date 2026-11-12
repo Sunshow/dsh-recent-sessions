@@ -1,0 +1,55 @@
+{
+  "name": "dsh-recent-sessions",
+  "version": "0.1.0",
+  "description": "侧栏「最近会话」：在工作区列表下方加一行入口，浮层里按最后活动时间列出最近的会话，点击直达并定位工作区；子代理会话可以折叠进主会话、隐藏或单独列出。",
+  "type": "module",
+  "license": "MIT",
+  "author": "Sunshow",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sidebar",
+    "session",
+    "recent",
+    "subagent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sunshow/dsh-recent-sessions.git"
+  },
+  "homepage": "https://github.com/Sunshow/dsh-recent-sessions#readme",
+  "bugs": {
+    "url": "https://github.com/Sunshow/dsh-recent-sessions/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "LICENSE",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}

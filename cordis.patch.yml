@@ -1,0 +1,31 @@
+# dsh-recent-sessions bundle patch
+#
+# The Host half only serves the resolved config to the browser half:
+#   GET  /api/dsh-recent-sessions/config   -> current values (+ canPersist)
+#   POST /api/dsh-recent-sessions/config   -> persist subagentMode into the profile patch
+#
+# Every key below can be overridden by a row with the same id in the profile's
+# cordis.patch.yml (a matching override replaces the complete config):
+#   subagentMode      fold | hide | separate  (default fold)
+#                       fold     - subagent sessions fold into their main session;
+#                                  the main row ranks by the newest activity in its subtree
+#                       hide     - subagent sessions never appear
+#                       separate - every subagent session gets its own row
+#   maxItems          rows in the list, 3-50 (default 12)
+#   maxAgeDays        time window in days: 0 = unlimited, 1, 7 or 30 (default 0)
+#   panelOverhang     extra px the sheet reaches past the sidebar column, 0-320 (default 0)
+#   closeOnPick       collapse the sheet after a row opens a session (default true)
+#   showWorkspace     show the workspace name on each row (default true)
+#   defaultCollapsed  start with the sheet closed (default true)
+#   refreshMs         relative-time refresh interval in ms (default 30000)
+- insert:
+    - id: recent-sessions
+      name: 'dsh-recent-sessions'
+      config:
+        subagentMode: fold
+        maxItems: 12
+        maxAgeDays: 0
+        panelOverhang: 0
+        closeOnPick: true
+        showWorkspace: true
+        defaultCollapsed: true
