@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax-check the hand-written plugin files
+        run: |
+          node --check index.js
+          node --check client.js
+      - name: Validate the manifest, locales and patch
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json ok')"
+          node -e "for (const f of ['locale/zh.json','locale/en.json']) { JSON.parse(require('fs').readFileSync(f,'utf8')); console.log(f,'ok') }"
+          node -e "const t=require('fs').readFileSync('cordis.patch.yml','utf8'); if (!/^- insert:/m.test(t)) throw new Error('patch has no insert row'); console.log('patch ok')"
+      - name: Check the artifacts the manifest promises
+        run: |
+          for f in index.js client.js cordis.patch.yml icon.svg docs/DETAIL.md docs/DETAIL.zh.md docs/preview.svg locale/zh.json locale/en.json; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          echo 'artifacts ok'
