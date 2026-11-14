@@ -1,7 +1,7 @@
 {
   "name": "dsh-recent-sessions",
-  "version": "0.1.0",
-  "description": "侧栏「最近会话」：在工作区列表下方加一行入口，浮层里按最后活动时间列出最近的会话，点击直达并定位工作区；子代理会话可以折叠进主会话、隐藏或单独列出。",
+  "version": "0.2.0",
+  "description": "侧栏「最近会话」：在工作区列表下方加一行入口，浮层里按最后活动时间列出最近的会话并支持按标题/工作区/Session ID 搜索，点击直达并定位工作区；子代理会话可以折叠进主会话、隐藏或单独列出。",
   "type": "module",
   "license": "MIT",
   "author": "Sunshow",
@@ -12,6 +12,7 @@
     "sidebar",
     "session",
     "recent",
+    "search",
     "subagent"
   ],
   "repository": {

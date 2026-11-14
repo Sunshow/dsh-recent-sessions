@@ -9,7 +9,7 @@
 
 </div>
 
-> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen with a switch in the sheet that saves back to the profile. A second switch limits the list to the last 1 / 7 / 30 days. The sheet spans the sidebar column and paints an opaque surface.
+> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. A search field at the top filters by session title, workspace name or path, session ID and state; opening the sheet focuses it, and Escape clears it. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen with a switch in the sheet that saves back to the profile. A second switch limits the list to the last 1 / 7 / 30 days. The sheet spans the sidebar column and paints an opaque surface.
 
 ## English quick start
 
@@ -19,12 +19,14 @@ Install from the Harness **Plugins** page → **Add plugin**:
 github:Sunshow/dsh-recent-sessions
 
 # or pin a version
-github:Sunshow/dsh-recent-sessions#v0.1.0
+github:Sunshow/dsh-recent-sessions#v0.2.0
 ```
 
 Then open the switch for `dsh-recent-sessions` in the installed list. The repository ships the plugin files as-is; nothing needs building.
 
 Find the entry row above **Settings** in the sidebar: `最近会话 · Recent sessions  <count>`. Click it, pick a session; the sheet closes and the sidebar scrolls to that session's workspace row (expanding the group first when it is collapsed).
+
+Opening the sheet puts the cursor in its search field, so you can start typing right away. Type to filter, `↑` / `↓` to highlight results (the caret stays in the field), `Enter` to open the highlighted row (or the top match once a query is typed), `Esc` to clear a query and drop focus, then `Esc` again to close the sheet. A printable key pressed anywhere in the sheet also returns focus to the field (Space still activates a focused row or switch).
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -37,6 +39,16 @@ Find the entry row above **Settings** in the sidebar: `最近会话 · Recent se
 | `defaultCollapsed` | `true` | start with the sheet closed |
 | `refreshMs` | `30000` | relative-time refresh interval |
 
+## Search
+
+The field under the title is focused the moment you open the sheet, and a printable key pressed anywhere in the sheet brings focus back to it — after arrow-key navigation or after clicking one of the switches you can simply keep typing.
+
+- Matches session titles (including the raw and display titles), workspace names and paths, session IDs, and non-idle state labels in the active language (e.g. `运行中` / `Running`). Several space-separated terms must all match.
+- Search is flat and newest-first. It ignores the fold tree — a matching subagent appears with its subagent tag — and ignores the Range window, so an old or nested session is still found; a note under the switches says so while matching rows are shown. The `hide` subagent mode still leaves subagent sessions out, and the empty state says so when that is the cause.
+- `↑` / `↓` move a highlight through the results while the caret stays in the field; `Enter` opens the highlighted row (or the top match once a query is typed); `Esc` with a query clears it and drops focus (`Esc` with no query closes the sheet); and the `✕` button only clears.
+- Matches are highlighted in the title and meta line. A match on text the row does not normally show (workspace path, raw/display title or session ID) is named as an extra meta segment — a session-ID match shows `Session ID` — so every result explains itself. Search also shows the workspace name even when `showWorkspace` is off, for the same reason.
+- The result list is still capped by `maxItems`; the header then reads `N matches · showing M`. Only sessions the client has loaded are searched; archived sessions stay in the sidebar's archive.
+
 Subagent handling (the switch at the top of the sheet, saved through `POST /api/dsh-recent-sessions/config` into the profile's `cordis.patch.yml`):
 
 | Mode | What the list shows | Ranking |
@@ -45,27 +57,39 @@ Subagent handling (the switch at the top of the sheet, saved through `POST /api/
 | **hide** | no subagent rows at all | each main session's own activity |
 | **separate** | one row per subagent session, marked `子代理` | each row's own activity |
 
-Limitations: archived sessions are not listed (they stay in the sidebar's archive); locating the sidebar row relies on the host's `data-row-key` markers, so it degrades to "opens the session only" if the host changes them; verified on macOS Desktop with DSH 0.2.2.
+Limitations: archived sessions are not listed (they stay in the sidebar's archive); search filters the same loaded snapshot in the browser and never reads session content; locating the sidebar row relies on the host's `data-row-key` markers, so it degrades to "opens the session only" if the host changes them; verified on macOS Desktop with DSH 0.2.2.
 
 ---
 
 ## 中文说明
 
-**侧栏多一行「最近会话」，随时回到刚才的会话；子代理会话按你的偏好折叠、隐藏或单独列出。**
+**侧栏多一行「最近会话」，随时回到刚才的会话；打开就能搜，子代理会话按你的偏好折叠、隐藏或单独列出。**
 
 DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多一行「最近会话」，
 点开是一张浮在工作区列表上方的面板：按最后活动时间列出最近的会话，点一行直接切过去。
+面板顶部的搜索框按会话标题、工作区名称 / 路径、Session ID 和状态过滤；点开浮层时它自动取得焦点，`Esc` 清空并脱离焦点。
 
 ## 功能
 
 - **一行入口**：`最近会话 12`，和「设置」同一款式与高度；数字是**列表里实际列出**的条数。侧栏收成细轨道时整行隐藏，不留圆点。
+- **直接搜**：浮层打开时搜索框自动取得焦点，打字即过滤；可以搜会话标题、工作区名称 / 路径、Session ID 和状态。焦点不在搜索框时按任意字符也会回到搜索框继续输入（空格仍用于激活当前聚焦的行或开关）。
 - **占满侧栏**：面板宽度取自**侧栏列**（不是入口行本身，所以底部同排有别的插件时也照样占满），浮在入口上方。面板用不透明的浮起底色，不会透出后面的工作区列表。想让面板再往右多伸一点（压到对话区），把 `panelOverhang` 设成 40、80 这样的像素值即可。
 - **点一行切过去，并定位到侧栏**：走官方导航（`uiWorkspace.openSession`）；随后面板收起，侧栏自动滚到该会话所在的工作区分组，必要时先展开被折叠的分组，当前会话整行高亮。不想让它自动收起就把 `closeOnPick` 设成 `false`。
 - **每行带状态**：运行中（蓝色呼吸点）、等待批准 / 计划确认 / 回答（黄点）、跑完未打开（绿点）。
 - **会话菜单**：悬停出现 `⋯`，打开官方会话菜单（置顶、重命名、分叉、归档、复制 Session ID），与侧栏工作区行同一套动作。
-- **键盘可用**：`Esc` 收起；`↑` / `↓` / `Home` / `End` 在行间移动，回车切换。
-- **不挡路**：面板不拦截背后的界面，点到面板外侧即收起；`Esc` 收起。
+- **键盘可用**：打字即搜索；`↑` / `↓` 在结果间移动高亮（光标留在搜索框），回车打开高亮项（有搜索词时可直接打开第一条）；`Tab` 可把焦点移到开关或结果行，在结果行上 `Home` / `End` 到头尾；有搜索时 `Esc` 先清空并脱离焦点，再按一次才收起面板，没有搜索时按 `Esc` 直接收起。
+- **不挡路**：面板不拦截背后的界面，点到面板外侧即收起。
 - **侧栏定位**：侧栏用的是宿主自己的行标记（`data-row-key`），展开分组是点宿主的工作区分组头；宿主改结构时这部分退化为「不定位」，会话照常打开。
+
+## 搜索
+
+搜索框在面板标题下方，点开浮层就取得焦点，直接打字即可；焦点不在搜索框时（比如刚用方向键选过行、点过开关），按任意可打印字符也会回到搜索框继续输入。
+
+- 匹配范围：会话标题（含原始标题与 displayTitle）、工作区名称与路径、Session ID、以及当前语言下非空闲的状态文案（运行中 / Running 等）。空格分隔多个词时，必须全部命中。
+- 搜索是平铺的、按会话自己的最后活动倒序：不沿子代理折叠树，也不受「范围」限制——有结果时开关下方会提示这一点，很旧或折叠在里面的会话照样能搜到；「隐藏」档仍然不列子代理，若因此没有结果，空状态里会说明。
+- `↑` / `↓` 在结果间移动高亮，光标一直留在搜索框；回车打开高亮项（没有高亮且有搜索词时打开第一条）；有搜索时 `Esc` 清空并脱离焦点（再按一次收起面板），没有搜索时直接收起；右侧 `✕` 只清空。
+- 标题和副标题里的命中会高亮。若命中的是行上原本不显示的内容（工作区路径、原始 / displayTitle、Session ID），会在副标题末尾补一段原因——Session ID 命中显示「会话 ID」——让每条结果都说得清为什么被搜到。搜索时即使 `showWorkspace` 关掉也会显示工作区名，原因同上。
+- 结果仍受「条数上限」截断，标题栏会显示「找到 N 个 · 显示 M」；只搜客户端已经加载的会话，已归档会话不在其中。
 
 ## 子代理会话怎么处理（本插件的主要设置）
 
@@ -124,6 +148,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 因此：
 
 - **已归档会话不在列表里**，仍走官方侧栏归档流程；
+- **搜索只做本地过滤**：匹配标题、工作区、Session ID 和状态，不读取会话正文；
 - 只显示当前那个空白「新会话」，历史空白会话不占行；
 - Host 半只提供配置读写两个路由，不读取、不转发会话内容。
 
@@ -135,7 +160,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 github:Sunshow/dsh-recent-sessions
 
 # 或固定版本
-github:Sunshow/dsh-recent-sessions#v0.1.0
+github:Sunshow/dsh-recent-sessions#v0.2.0
 ```
 
 安装后在已安装列表里打开 `dsh-recent-sessions` 的开关。仓库里提交的就是可直接运行的插件文件，

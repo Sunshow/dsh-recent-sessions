@@ -25,6 +25,11 @@
 //
 // The mode travels: panel switch -> localStorage (works offline) -> POST to the
 // Host, which persists it into the profile patch through `configEditor`.
+//
+// The sheet is also its own search surface: the field takes focus when the sheet
+// opens, a printable key anywhere in the sheet routes back to it, Escape clears a
+// typed query and drops focus (with no query it closes the sheet), and the filter
+// runs over the same client snapshots (title, workspace, id, state).
 
 window.__ModuleLoader__.load({
   id: 'dsh-recent-sessions',
@@ -103,6 +108,12 @@ window.__ModuleLoader__.load({
         'head.close': '收起最近会话',
         'head.count': '{count} 个会话',
         'head.countOf': '{shown} / {count} 个会话',
+        'head.matches': '找到 {count} 个',
+        'head.matchesOf': '找到 {count} 个 · 显示 {shown}',
+        'search.label': '搜索会话',
+        'search.placeholder': '搜索会话、工作区…',
+        'search.clear': '清空搜索 (Esc)',
+        'search.scope': '搜索结果平铺展示，不受「范围」与子代理折叠影响',
         'modes.label': '子代理',
         'modes.fold': '折叠',
         'modes.hide': '隐藏',
@@ -126,6 +137,8 @@ window.__ModuleLoader__.load({
         'row.subagents': '{count} 个子代理',
         'row.bubbled': '按子代理的最新活动排序',
         'row.subagent': '子代理',
+        'row.matchId': '会话 ID',
+        'row.active': '当前选中 {name}',
         'row.expand': '展开 {name} 的子代理',
         'row.collapse': '收起 {name} 的子代理',
         'state.idle': '空闲',
@@ -139,6 +152,9 @@ window.__ModuleLoader__.load({
         'empty.rangeTitle': '最近 {days} 天里没有会话',
         'empty.rangeHint': '更早的会话被「范围」挡住了',
         'empty.showAll': '改为不限',
+        'empty.searchTitle': '没有匹配「{query}」的会话',
+        'empty.searchHint': '可以搜会话标题、工作区名、路径或 Session ID；搜索不受「范围」限制',
+        'empty.searchHideHint': '「隐藏」档不列出子代理会话，搜索也不会命中它们',
         'time.now': '刚刚',
         'time.minutes': '{count} 分钟前',
         'time.hours': '{count} 小时前',
@@ -154,6 +170,12 @@ window.__ModuleLoader__.load({
         'head.close': 'Hide recent sessions',
         'head.count': '{count} sessions',
         'head.countOf': '{shown} of {count} sessions',
+        'head.matches': '{count} matches',
+        'head.matchesOf': '{count} matches · showing {shown}',
+        'search.label': 'Search sessions',
+        'search.placeholder': 'Search sessions, workspaces…',
+        'search.clear': 'Clear search (Esc)',
+        'search.scope': 'Search results are a flat list; Range and subagent folding do not apply',
         'modes.label': 'Subagents',
         'modes.fold': 'Fold',
         'modes.hide': 'Hide',
@@ -177,6 +199,8 @@ window.__ModuleLoader__.load({
         'row.subagents': '{count} subagents',
         'row.bubbled': 'Ranked by the newest subagent activity',
         'row.subagent': 'Subagent',
+        'row.matchId': 'Session ID',
+        'row.active': 'Selected {name}',
         'row.expand': 'Show the subagents of {name}',
         'row.collapse': 'Hide the subagents of {name}',
         'state.idle': 'Idle',
@@ -190,6 +214,9 @@ window.__ModuleLoader__.load({
         'empty.rangeTitle': 'No sessions in the last {days} days',
         'empty.rangeHint': 'Older sessions are outside the Range filter',
         'empty.showAll': 'Show all',
+        'empty.searchTitle': 'No sessions match “{query}”',
+        'empty.searchHint': 'Search titles, workspace names, paths or session IDs; search ignores Range',
+        'empty.searchHideHint': 'Hide mode leaves subagent sessions out, so search cannot find them',
         'time.now': 'just now',
         'time.minutes': '{count} min ago',
         'time.hours': '{count} h ago',
@@ -227,6 +254,10 @@ window.__ModuleLoader__.load({
       ],
       chevronDown: [{ d: 'M4 6.2 8 10.2l4-4' }],
       chevronRight: [{ d: 'M6.2 4 10.2 8l-4 4' }],
+      search: [
+        { d: 'M7.1 2.7a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8Z' },
+        { d: 'm10.6 10.6 2.6 2.6' },
+      ],
       close: [{ d: 'M4 4l8 8' }, { d: 'M12 4l-8 8' }],
       ellipsis: null,
       branch: [
@@ -293,17 +324,24 @@ window.__ModuleLoader__.load({
       return undefined;
     }
 
-    /** SessionId -> workspace title, from the workspace rows' accounted members. */
-    function workspaceNames(state) {
-      const names = new Map();
+    /**
+     * SessionId -> workspace facts, from the workspace rows' accounted members.
+     * `title` is what a row shows (falling back to the path); `path` stays
+     * separate because the search should match either spelling.
+     */
+    function workspaceIndex(state) {
+      const index = new Map();
       const items = state && Array.isArray(state.items) ? state.items : EMPTY_LIST;
       for (const item of items) {
         if (!item) continue;
-        const title = typeof item.title === 'string' && item.title !== '' ? item.title : item.path;
+        const path = typeof item.path === 'string' ? item.path : '';
+        const title = typeof item.title === 'string' && item.title !== '' ? item.title : path;
         const ids = Array.isArray(item.sessionIds) ? item.sessionIds : EMPTY_LIST;
-        for (const id of ids) if (!names.has(id)) names.set(id, title || '');
+        for (const id of ids) {
+          if (!index.has(id)) index.set(id, { title: title || '', path });
+        }
       }
-      return names;
+      return index;
     }
 
     /** The three pending kinds the shipped sidebar treats as a visible state. */
@@ -329,6 +367,71 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /* ----------------------------------------------------------------- search */
+
+    /**
+     * Split a raw query into lower-cased terms. Every term must be present for a
+     * row to match; an empty list means "no filter".
+     */
+    function searchTerms(query) {
+      if (typeof query !== 'string') return EMPTY_LIST;
+      const trimmed = query.trim();
+      if (trimmed === '') return EMPTY_LIST;
+      return trimmed.toLowerCase().split(/\s+/);
+    }
+
+    /** Escape a term so a literal query like `C++` stays a literal search. */
+    function escapeRegExp(value) {
+      return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Split `text` into alternating plain / matched parts, the shape
+     * `String.prototype.split` returns for a capturing pattern.
+     */
+    function highlightParts(text, terms) {
+      if (typeof text !== 'string' || text === '' || terms.length === 0) return [text];
+      let pattern;
+      try {
+        pattern = new RegExp('(' + terms.map(escapeRegExp).join('|') + ')', 'gi');
+      } catch (error) {
+        return [text];
+      }
+      return text.split(pattern);
+    }
+
+    /** Render `text` with its search-term matches wrapped in `mark` elements. */
+    function markedText(text, terms) {
+      return highlightParts(text, terms).map((part, index) => (
+        index % 2 === 1 ? h('mark', { key: index, className: 'rs-hl' }, part) : part
+      ));
+    }
+
+    /**
+     * Whether a key target already accepts typed text. Anything else in the
+     * sheet routes printable keys to the search field.
+     */
+    function isTextEntry(value) {
+      if (!isElement(value)) return false;
+      const tag = value.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      const role = value.getAttribute('role');
+      if (role === 'textbox' || role === 'searchbox' || role === 'combobox') return true;
+      return value.isContentEditable === true;
+    }
+
+    /** Space on a focused button must keep activating it, not become a query. */
+    function isButtonLike(value) {
+      if (!isElement(value)) return false;
+      return value.tagName === 'BUTTON' || value.tagName === 'A' || value.getAttribute('role') === 'button';
+    }
+
+    /** Composition-aware guard: Enter that commits an IME candidate is not "pick". */
+    function isComposingEvent(event) {
+      const native = event && event.nativeEvent ? event.nativeEvent : event;
+      return Boolean(native && (native.isComposing === true || native.keyCode === 229));
+    }
+
     /**
      * Fold the official snapshots into the rows the sheet draws.
      *
@@ -351,6 +454,9 @@ window.__ModuleLoader__.load({
       const t = input.t;
       const localeId = input.localeId;
       const countOnly = input.countOnly === true;
+      const query = typeof input.query === 'string' ? input.query : '';
+      const terms = searchTerms(query);
+      const searching = terms.length > 0;
 
       const byId = list && list.byId ? list.byId : {};
       const limit = typeof maxItems === 'number' && maxItems > 0 ? maxItems : DEFAULTS.maxItems;
@@ -362,7 +468,7 @@ window.__ModuleLoader__.load({
       const archived = workspaces && workspaces.archivedSessionIds
         ? new Set(workspaces.archivedSessionIds)
         : EMPTY_SET;
-      const names = workspaceNames(workspaces);
+      const names = workspaceIndex(workspaces);
       const currentId = currentSessionId(byId);
 
       const entries = [];
@@ -480,39 +586,46 @@ window.__ModuleLoader__.load({
         return false;
       }
 
-      function present(entry, depth, rankedAt, extra) {
-        const summary = entry.summary;
-        const status = statuses ? statuses.get(entry.id) : undefined;
+      /** Row title: a blank session has a generated label, everything else its title. */
+      function titleOf(summary) {
+        if (summary.blank === true) return t('row.blank');
+        if (typeof summary.title === 'string' && summary.title.trim() !== '') return summary.title.trim();
+        if (typeof summary.displayTitle === 'string' && summary.displayTitle.trim() !== '') {
+          return summary.displayTitle.trim();
+        }
+        return t('row.untitled');
+      }
+
+      /** Dot state and its localized label, live status first, snapshot second. */
+      function stateOf(entry, status) {
         const pending = visiblePendingKind(
           status && status.pendingInteraction ? status.pendingInteraction.kind : undefined,
         );
-        const running = status && typeof status.running === 'boolean' ? status.running : summary.running === true;
+        const running = status && typeof status.running === 'boolean' ? status.running : entry.summary.running === true;
+        if (pending !== undefined) return { state: 'warning', stateLabel: t('state.' + pending) };
+        if (running) return { state: 'ongoing', stateLabel: t('state.running') };
+        if (status !== undefined && status.completionUnread === true) return { state: 'done', stateLabel: t('state.done') };
+        return { state: 'idle', stateLabel: t('state.idle') };
+      }
 
-        let state = 'idle';
-        let stateLabel = t('state.idle');
-        if (pending !== undefined) {
-          state = 'warning';
-          stateLabel = t('state.' + pending);
-        } else if (running) {
-          state = 'ongoing';
-          stateLabel = t('state.running');
-        } else if (status !== undefined && status.completionUnread === true) {
-          state = 'done';
-          stateLabel = t('state.done');
-        }
-
-        const blank = summary.blank === true;
-        const title = blank
-          ? t('row.blank')
-          : (typeof summary.title === 'string' && summary.title.trim() !== ''
-            ? summary.title.trim()
-            : (typeof summary.displayTitle === 'string' && summary.displayTitle.trim() !== ''
-              ? summary.displayTitle.trim()
-              : t('row.untitled')));
+      function present(entry, depth, rankedAt, extra) {
+        const summary = entry.summary;
+        const status = statuses ? statuses.get(entry.id) : undefined;
+        const statusInfo = stateOf(entry, status);
+        const state = statusInfo.state;
+        const stateLabel = statusInfo.stateLabel;
+        const title = titleOf(summary);
 
         const meta = [relativeTime(rankedAt, now, t, localeId)];
-        const workspace = names.get(entry.id) || '';
-        if (showWorkspace && workspace) meta.push(workspace);
+        // While filtering, spell out a non-idle state so a status match has a
+        // visible reason; the idle dot needs no word on every row.
+        if (searching && state !== 'idle') meta.push(stateLabel);
+        const space = names.get(entry.id);
+        const workspace = space ? space.title : '';
+        if ((showWorkspace || searching) && workspace) meta.push(workspace);
+        // A match on a field the row does not normally print (path, raw title,
+        // display title, session id) is named here so filtering never looks magic.
+        if (searching && extra.reason) meta.push(extra.reason);
         if (extra.count > 0) meta.push(t('row.subagents', { count: extra.count }));
         if (extra.markSubagent) meta.push(t('row.subagent'));
 
@@ -540,6 +653,116 @@ window.__ModuleLoader__.load({
 
       // Separate mode ranks and filters every session on its own timestamp.
       const all = entries.length;
+
+      // A search is a flat lookup across the candidate sessions: it deliberately
+      // ignores the fold tree (a matching subagent is worth finding) and the
+      // Range window (the user is looking for a session, not browsing), while
+      // Hide mode still keeps subagents out as promised.
+      if (searching) {
+        const haystacks = new Map();
+        function searchable(entry) {
+          const cached = haystacks.get(entry.id);
+          if (cached !== undefined) return cached;
+          const summary = entry.summary;
+          const space = names.get(entry.id);
+          const status = statuses ? statuses.get(entry.id) : undefined;
+          const statusInfo = stateOf(entry, status);
+          const parts = [
+            titleOf(summary),
+            summary.title,
+            summary.displayTitle,
+            entry.id,
+            space ? space.title : undefined,
+            space ? space.path : undefined,
+            statusInfo.state === 'idle' ? undefined : statusInfo.stateLabel,
+          ];
+          if (entry.subagent) parts.push(t('row.subagent'));
+          const text = parts
+            .filter(part => typeof part === 'string' && part !== '')
+            .join('\n')
+            .toLowerCase();
+          haystacks.set(entry.id, text);
+          return text;
+        }
+
+        /** Text the row actually shows, used to tell whether a reason is needed. */
+        function visibleText(entry) {
+          const summary = entry.summary;
+          const space = names.get(entry.id);
+          const status = statuses ? statuses.get(entry.id) : undefined;
+          const statusInfo = stateOf(entry, status);
+          const parts = [
+            titleOf(summary),
+            space ? space.title : '',
+            statusInfo.state === 'idle' ? '' : statusInfo.stateLabel,
+          ];
+          if (entry.subagent) parts.push(t('row.subagent'));
+          return parts.filter(part => typeof part === 'string' && part !== '').join('\n').toLowerCase();
+        }
+
+        /**
+         * The fields that explain a match the row does not normally show. Returns
+         * the raw/display title or workspace path values, or the `Session ID`
+         * label, joined when several fields together cover the query terms.
+         */
+        function matchReason(entry) {
+          const visible = visibleText(entry);
+          let missing = terms.filter(term => visible.indexOf(term) === -1);
+          if (missing.length === 0) return undefined;
+          const summary = entry.summary;
+          const title = titleOf(summary);
+          const space = names.get(entry.id);
+          const rawTitle = typeof summary.title === 'string' ? summary.title.trim() : '';
+          const display = typeof summary.displayTitle === 'string' ? summary.displayTitle.trim() : '';
+          const fields = [];
+          if (rawTitle !== '' && rawTitle !== title) fields.push(rawTitle);
+          if (display !== '' && display !== title) fields.push(display);
+          if (space && space.path !== '' && space.path !== space.title) fields.push(space.path);
+          const pieces = [];
+          for (const field of fields) {
+            const text = field.toLowerCase();
+            const hits = missing.filter(term => text.indexOf(term) !== -1);
+            if (hits.length === 0) continue;
+            pieces.push(field);
+            missing = missing.filter(term => hits.indexOf(term) === -1);
+            if (missing.length === 0) break;
+          }
+          if (missing.length > 0) {
+            const idText = entry.id.toLowerCase();
+            if (missing.every(term => idText.indexOf(term) !== -1)) pieces.push(t('row.matchId'));
+          }
+          return pieces.length > 0 ? pieces.join(' · ') : undefined;
+        }
+
+        const eligible = mode === 'hide' ? entries.filter(entry => !entry.subagent) : entries;
+        // In hide mode, remember whether a subagent would have matched so the
+        // empty state can blame the mode instead of the query.
+        const suppressed = mode === 'hide'
+          ? entries.filter(entry => entry.subagent).filter((entry) => {
+            const text = searchable(entry);
+            return terms.every(term => text.indexOf(term) !== -1);
+          }).length
+          : 0;
+        const matched = eligible.filter(entry => {
+          const text = searchable(entry);
+          return terms.every(term => text.indexOf(term) !== -1);
+        });
+        const ordered = matched.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+        const shown = Math.min(ordered.length, limit);
+        if (countOnly) {
+          return { rows: EMPTY_LIST, total: ordered.length, shown, all: eligible.length, searching: true, suppressed };
+        }
+        for (const entry of ordered.slice(0, limit)) {
+          rows.push(present(entry, 0, entry.updatedAt, {
+            count: 0,
+            ancestor: false,
+            markSubagent: entry.subagent,
+            reason: matchReason(entry),
+          }));
+        }
+        return { rows, total: ordered.length, shown, all: eligible.length, searching: true, suppressed };
+      }
+
       if (mode === 'separate') {
         const eligible = cutoff > 0 ? entries.filter(entry => entry.updatedAt >= cutoff) : entries;
         const ordered = eligible.slice().sort((a, b) => b.updatedAt - a.updatedAt);
@@ -633,6 +856,20 @@ window.__ModuleLoader__.load({
       '.rs-iconbtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
       '.rs-iconbtn:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
 
+      /* search ----------------------------------------------------------- */
+      '.rs-search { flex: none; display: flex; align-items: center; gap: 6px; box-sizing: border-box; height: 30px; margin: 0 12px 8px; padding: 0 5px 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm, 8px); background: var(--dsw-alias-bg-layer-2); }',
+      '.rs-search:focus-within { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent); }',
+      '.rs-search__icon { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }',
+      '.rs-search__input { flex: 1 1 auto; min-width: 0; height: 100%; margin: 0; padding: 0; border: none; outline: none; background: transparent; color: var(--dsw-alias-label-primary); font-family: inherit; font-size: 12px; line-height: 18px; }',
+      '.rs-search__input::placeholder { color: var(--dsw-alias-label-tertiary); }',
+      '.rs-search__input::-webkit-search-cancel-button, .rs-search__input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }',
+      '.rs-search__clear { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; border-radius: var(--dsw-radius-xs, 4px); background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }',
+      '.rs-search__clear:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
+      '.rs-search__clear:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -1px; }',
+      '.rs-searchhint { flex: none; margin-top: -2px; padding: 0 12px 6px; font-size: 11px; line-height: 15px; color: var(--dsw-alias-label-tertiary); }',
+      '.rs-hl { border-radius: 2px; background: var(--dsw-alias-interactive-bg-active); color: inherit; }',
+      '.rs-hl { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, transparent); }',
+
       /* mode switch ----------------------------------------------------- */
       '.rs-modes { flex: none; display: flex; align-items: center; gap: 8px; padding: 2px 12px 8px; }',
       '.rs-modes__label { flex: none; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }',
@@ -652,6 +889,7 @@ window.__ModuleLoader__.load({
       '.rs-row:hover { background: var(--dsw-alias-interactive-bg-hover); }',
       '.rs-row:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
       '.rs-row[data-current="true"] { background: var(--dsw-alias-interactive-bg-active); }',
+      '.rs-rowwrap[data-active="true"] .rs-row { background: var(--dsw-alias-interactive-bg-hover); box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary); }',
       '.rs-rowwrap[data-ancestor="true"]::before { content: ""; position: absolute; left: -4px; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: var(--dsw-alias-state-business-primary); opacity: 0.75; }',
       '.rs-row__dot { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 10px; height: 10px; }',
       '.rs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-state-idle-primary); }',
@@ -899,6 +1137,8 @@ window.__ModuleLoader__.load({
         persistError: '',
         expanded: new Set(),
         anchor: null,
+        query: '',
+        focusSearch: false,
         now: Date.now(),
       });
 
@@ -913,16 +1153,26 @@ window.__ModuleLoader__.load({
       /* ---- panel state ------------------------------------------------- */
 
       function openPanel() {
-        panel.update(state => (state.open ? state : { ...state, open: true, now: Date.now() }));
+        panel.update(state => (state.open
+          ? state
+          : { ...state, open: true, now: Date.now(), query: '', focusSearch: true }));
       }
 
       function closePanel() {
-        panel.update(state => (state.open ? { ...state, open: false } : state));
+        panel.update(state => (state.open || state.query !== '' || state.focusSearch
+          ? { ...state, open: false, query: '', focusSearch: false }
+          : state));
       }
 
       function togglePanel() {
         if (panel.getSnapshot().open) closePanel();
         else openPanel();
+      }
+
+      /** Replace the search query; the sheet stays open and filters in place. */
+      function setQuery(value) {
+        const next = typeof value === 'string' ? value : '';
+        panel.update(state => (state.query === next ? state : { ...state, query: next }));
       }
 
       function toggleExpand(id) {
@@ -939,7 +1189,7 @@ window.__ModuleLoader__.load({
           if (state.anchor === element) return state;
           // The entry unmounts when the sidebar collapses to its rail: the sheet
           // has lost its anchor, so drop it instead of re-opening on return.
-          if (element === null) return { ...state, anchor: null, open: false };
+          if (element === null) return { ...state, anchor: null, open: false, query: '', focusSearch: false };
           return { ...state, anchor: element };
         });
       }
@@ -1046,6 +1296,16 @@ window.__ModuleLoader__.load({
         return false;
       }
 
+      /**
+       * Act on a row: open the session, then (by default) collapse the sheet and
+       * scroll the sidebar to the session's workspace.
+       */
+      function pickRow(row) {
+        if (!openSession(row.id)) return;
+        if (panel.getSnapshot().config.closeOnPick !== false) closePanel();
+        revealInSidebar(row.id, row.workspace);
+      }
+
       function openRowMenu(id, title, element) {
         const menus = ctx.get('contextMenus', false);
         if (menus === undefined || typeof menus.open !== 'function') return;
@@ -1076,6 +1336,7 @@ window.__ModuleLoader__.load({
         const localeSnapshot = fallbacks.locale(identity);
         const localeId = localeIdOf(localeSnapshot) || activeLocaleId();
         const countOnly = options !== undefined && options.countOnly === true;
+        const query = countOnly ? '' : state.query;
         return useMemo(() => buildView({
           list,
           statuses,
@@ -1085,13 +1346,14 @@ window.__ModuleLoader__.load({
           maxAgeDays: state.maxAgeDays,
           showWorkspace: state.config.showWorkspace,
           expanded: countOnly ? EMPTY_SET : state.expanded,
+          query,
           now: state.now,
           t,
           localeId,
           countOnly,
         }), [
           list, workspaceState, statuses, state.mode, state.expanded, state.now,
-          state.config.maxItems, state.maxAgeDays, state.config.showWorkspace, localeId, countOnly,
+          state.config.maxItems, state.maxAgeDays, state.config.showWorkspace, localeId, countOnly, query,
         ]);
       }
 
@@ -1133,9 +1395,14 @@ window.__ModuleLoader__.load({
       function PanelBody(props) {
         const state = props.panelState;
         const view = useView(props, state);
+        // Identity of the visible result set, in order: a selection may only be
+        // kept while the same rows occupy the same positions.
+        const rowSignature = view.rows.map(row => row.key).join('|');
         const panelRef = useRef(null);
         const listRef = useRef(null);
+        const searchRef = useRef(null);
         const [geo, setGeo] = useState(null);
+        const [activeIndex, setActiveIndex] = useState(-1);
 
         // Measure the anchor (the entry row) instead of guessing the sidebar's
         // geometry: the sheet then lines up with whatever column width, window
@@ -1190,8 +1457,13 @@ window.__ModuleLoader__.load({
           return () => { window.clearInterval(interval); };
         }, [state.config.refreshMs]);
 
-        // Outside click closes (a row click stays inside), Escape closes from
-        // anywhere — the sheet is never a modal, nothing behind it is blocked.
+        // Outside click closes (a row click stays inside). Escape with a query
+        // clears it and moves focus off the field; Escape with no query closes
+        // the sheet, as before. Inside the sheet (or on the page background) a
+        // printable key routes to the search field, so typing works after
+        // arrow-key navigation or a switch click too; host text fields keep their
+        // own Escape, and typing in other host controls is left alone. The sheet
+        // is never a modal; nothing behind it blocks.
         useEffect(() => {
           const onPointerDown = (event) => {
             const panelElement = panelRef.current;
@@ -1205,12 +1477,69 @@ window.__ModuleLoader__.load({
             if (isElement(target) && target.closest('[role="menu"], [data-context-menu], [data-context-menu-trigger]') !== null) return;
             closePanel();
           };
+          const focusPanel = () => {
+            const element = panelRef.current;
+            if (element && typeof element.focus === 'function') element.focus({ preventScroll: true });
+          };
           const onKeyDown = (event) => {
-            if (event.key !== 'Escape') return;
+            const target = event.target;
+            const panelElement = panelRef.current;
+            const inSheet = panelElement !== null && isNode(target) && panelElement.contains(target);
+            const onBackground = target === document.body || target === document.documentElement || target === document;
+            const input = searchRef.current;
+            const typing = isTextEntry(target);
+
+            // A composition started while focus sat on a row or switch has no
+            // editable target; move focus to the field so the next keystroke can
+            // compose there instead of being swallowed.
+            if (isComposingEvent(event)) {
+              if (!typing && (inSheet || onBackground) && input !== null) {
+                input.focus({ preventScroll: true });
+              }
+              return;
+            }
+
+            const live = panel.getSnapshot();
+            if (event.key === 'Escape') {
+              // A host text field or dialog opened from the sheet owns Escape.
+              if (!inSheet && typing) return;
+              event.preventDefault();
+              if (live.query.trim() !== '') {
+                setQuery('');
+                if (input !== null && document.activeElement === input && typeof input.blur === 'function') {
+                  input.blur();
+                }
+                focusPanel();
+                return;
+              }
+              closePanel();
+              const anchorElement = live.anchor;
+              if (anchorElement && typeof anchorElement.focus === 'function') {
+                anchorElement.focus({ preventScroll: true });
+              }
+              return;
+            }
+
+            // Printable keys belong to the sheet only while focus is in it (or on
+            // the page background); a host control keeps its own typing.
+            if (!inSheet && !onBackground) return;
+            if (event.defaultPrevented || typing) return;
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
+            const key = event.key;
+            if (typeof key !== 'string' || key.length !== 1) return;
+            // Space still activates a focused button; every other printable key
+            // starts (or continues) a search instead of doing nothing. A leading
+            // space from the sheet background is not a query worth entering.
+            if (key === ' ' && isButtonLike(target)) return;
+            if (key === ' ' && live.query.trim() === '') {
+              event.preventDefault();
+              return;
+            }
+            if (input === null) return;
             event.preventDefault();
-            closePanel();
-            const anchorElement = state.anchor;
-            if (anchorElement && typeof anchorElement.focus === 'function') anchorElement.focus();
+            event.stopPropagation();
+            input.focus({ preventScroll: true });
+            panel.update(current => ({ ...current, query: current.query + key }));
           };
           document.addEventListener('pointerdown', onPointerDown, true);
           document.addEventListener('keydown', onKeyDown, true);
@@ -1220,25 +1549,46 @@ window.__ModuleLoader__.load({
           };
         }, [state.anchor]);
 
-        // Hand focus to the sheet so the arrow keys and Escape work at once.
-        // `geo` is null on the first commit, so focus waits for the measured
-        // render and then never steals focus again.
+        // Hand focus to the search field as soon as the measured sheet exists.
+        // Only a user-initiated open focuses: a sheet restored by `defaultCollapsed:
+        // false` must not pull focus out of the composer at startup. `geo` is null
+        // on the first commit, so focus waits for the measured render.
         const focused = useRef(false);
         useLayoutEffect(() => {
-          if (geo === null || focused.current) return;
+          if (geo === null || focused.current || state.focusSearch !== true) return;
           focused.current = true;
-          const element = panelRef.current;
+          const input = searchRef.current;
+          const element = input !== null ? input : panelRef.current;
           if (element && typeof element.focus === 'function') element.focus({ preventScroll: true });
-        }, [geo]);
+        }, [geo, state.focusSearch]);
 
-        const onPanelKeyDown = (event) => {
-          const key = event.key;
-          if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') return;
+        // Clear a selection when the visible result set or its order changes.
+        useLayoutEffect(() => {
+          setActiveIndex(-1);
+        }, [rowSignature]);
+
+        // A new query starts at the top of the results instead of keeping the
+        // previous scroll position (the list element survives the filter).
+        useLayoutEffect(() => {
           const listElement = listRef.current;
-          if (!listElement) return;
+          if (listElement !== null) listElement.scrollTop = 0;
+        }, [state.query]);
+
+        // Keep the highlighted row visible while the caret stays in the field.
+        useLayoutEffect(() => {
+          if (activeIndex < 0) return;
+          const listElement = listRef.current;
+          if (listElement === null) return;
+          const item = listElement.querySelector('[data-row-index="' + activeIndex + '"]');
+          if (item && typeof item.scrollIntoView === 'function') item.scrollIntoView({ block: 'nearest' });
+        }, [activeIndex]);
+
+        /** Move DOM focus into the result list; returns whether a row existed. */
+        const moveFocusToRow = (key) => {
+          const listElement = listRef.current;
+          if (!listElement) return false;
           const items = Array.from(listElement.querySelectorAll('button[data-row-id]'));
-          if (items.length === 0) return;
-          event.preventDefault();
+          if (items.length === 0) return false;
           const index = items.indexOf(document.activeElement);
           let next;
           if (key === 'Home') next = 0;
@@ -1246,11 +1596,59 @@ window.__ModuleLoader__.load({
           else if (index < 0) next = key === 'ArrowDown' ? 0 : items.length - 1;
           else next = Math.min(items.length - 1, Math.max(0, index + (key === 'ArrowDown' ? 1 : -1)));
           items[next].focus();
+          setActiveIndex(-1);
+          return true;
+        };
+
+        const onPanelKeyDown = (event) => {
+          // An IME owns arrows/Enter while it is composing; don't move the
+          // highlight out from under the candidate window.
+          if (isComposingEvent(event)) return;
+          const key = event.key;
+          const input = searchRef.current;
+          // Up/Down move a highlight over the results while the caret stays in
+          // the field, so typing (and IME composition) never has to leave it.
+          // Home/End still move the caret instead of jumping to a row.
+          if (input !== null && event.target === input) {
+            if (key === 'ArrowDown' || key === 'ArrowUp') {
+              if (view.rows.length === 0) return;
+              event.preventDefault();
+              setActiveIndex((previous) => {
+                const count = view.rows.length;
+                if (previous < 0 || previous >= count) return key === 'ArrowDown' ? 0 : count - 1;
+                return Math.min(count - 1, Math.max(0, previous + (key === 'ArrowDown' ? 1 : -1)));
+              });
+              return;
+            }
+            if (key === 'Enter') {
+              if (isComposingEvent(event)) return;
+              const selected = activeIndex >= 0 && activeIndex < view.rows.length
+                ? view.rows[activeIndex]
+                : undefined;
+              const targetRow = selected !== undefined
+                ? selected
+                : (state.query.trim() !== '' && view.rows.length > 0 ? view.rows[0] : undefined);
+              if (targetRow === undefined) return;
+              event.preventDefault();
+              pickRow(targetRow);
+            }
+            return;
+          }
+          if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') return;
+          if (moveFocusToRow(key)) event.preventDefault();
         };
 
         if (geo === null) return null;
 
         const rows = view.rows;
+        const terms = searchTerms(state.query);
+        const searching = view.searching === true;
+        const activeRow = activeIndex >= 0 && activeIndex < rows.length ? rows[activeIndex] : undefined;
+        /** Return focus to the field after a pointer action on a switch. */
+        const focusSearch = () => {
+          const input = searchRef.current;
+          if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
+        };
         const sheetElement = h(
           'div',
           {
@@ -1273,9 +1671,13 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'rs-head' },
             h('span', { className: 'rs-head__title' }, t('head.title')),
-            h('span', { className: 'rs-head__count' }, view.shown < view.total
-              ? t('head.countOf', { shown: view.shown, count: view.total })
-              : t('head.count', { count: view.total })),
+            h('span', { className: 'rs-head__count', role: 'status', 'aria-live': 'polite' }, searching
+              ? (view.shown < view.total
+                ? t('head.matchesOf', { shown: view.shown, count: view.total })
+                : t('head.matches', { count: view.total }))
+              : (view.shown < view.total
+                ? t('head.countOf', { shown: view.shown, count: view.total })
+                : t('head.count', { count: view.total }))),
             h(
               'button',
               {
@@ -1292,8 +1694,10 @@ window.__ModuleLoader__.load({
               icon('close', 14),
             ),
           ),
-          renderModes(state),
-          renderRange(state),
+          renderSearch(state, searchRef),
+          renderModes(state, focusSearch),
+          renderRange(state, focusSearch),
+          searching && rows.length > 0 ? h('div', { className: 'rs-searchhint' }, t('search.scope')) : null,
           state.persistError || (state.hydrated && !state.canPersist)
             ? h(
               'div',
@@ -1305,27 +1709,95 @@ window.__ModuleLoader__.load({
             ? h(
               'div',
               { className: 'rs-empty' },
-              h('div', { className: 'rs-empty__title' }, view.total === 0 && view.all > 0 && state.maxAgeDays > 0
-                ? t('empty.rangeTitle', { days: state.maxAgeDays })
-                : t('empty.title')),
-              h('div', { className: 'rs-empty__hint' }, view.total === 0 && view.all > 0 && state.maxAgeDays > 0
-                ? t('empty.rangeHint')
-                : t('empty.hint')),
-              view.total === 0 && view.all > 0 && state.maxAgeDays > 0
-                ? h('button', { type: 'button', className: 'rs-empty__action', onClick: () => setRange(0) }, t('empty.showAll'))
-                : null,
+              searching
+                ? h('div', { className: 'rs-empty__title' }, t('empty.searchTitle', { query: state.query.trim() }))
+                : h('div', { className: 'rs-empty__title' }, view.total === 0 && view.all > 0 && state.maxAgeDays > 0
+                  ? t('empty.rangeTitle', { days: state.maxAgeDays })
+                  : t('empty.title')),
+              searching
+                ? h('div', { className: 'rs-empty__hint' }, state.mode === 'hide' && view.suppressed > 0
+                  ? t('empty.searchHideHint')
+                  : t('empty.searchHint'))
+                : h('div', { className: 'rs-empty__hint' }, view.total === 0 && view.all > 0 && state.maxAgeDays > 0
+                  ? t('empty.rangeHint')
+                  : t('empty.hint')),
+              searching
+                ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'rs-empty__action',
+                    onClick: () => {
+                      setQuery('');
+                      const input = searchRef.current;
+                      if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
+                    },
+                  },
+                  t('search.clear'),
+                )
+                : view.total === 0 && view.all > 0 && state.maxAgeDays > 0
+                  ? h('button', { type: 'button', className: 'rs-empty__action', onClick: () => setRange(0) }, t('empty.showAll'))
+                  : null,
             )
             : h(
               'div',
               { className: 'rs-list', ref: listRef, role: 'list' },
-              rows.map(renderRow),
+              rows.map((row, index) => renderRow(row, terms, index, activeIndex)),
             ),
+          h(
+            'span',
+            { className: 'rs-sr', role: 'status', 'aria-live': 'polite' },
+            activeRow ? t('row.active', { name: activeRow.title }) : '',
+          ),
         );
         if (createPortal === null) return sheetElement;
         return createPortal(sheetElement, document.body);
       }
 
-      function renderModes(state) {
+      /**
+       * The search field. It stays at the top of the sheet: opening the sheet
+       * focuses it, and a printable key anywhere in the sheet returns focus here.
+       */
+      function renderSearch(state, searchRef) {
+        return h(
+          'div',
+          { className: 'rs-search', role: 'search' },
+          h('span', { className: 'rs-search__icon', 'aria-hidden': 'true' }, icon('search', 14)),
+          h('input', {
+            ref: searchRef,
+            className: 'rs-search__input',
+            type: 'search',
+            value: state.query,
+            placeholder: t('search.placeholder'),
+            'aria-label': t('search.label'),
+            autoComplete: 'off',
+            autoCorrect: 'off',
+            autoCapitalize: 'off',
+            enterKeyHint: 'search',
+            spellCheck: false,
+            onChange: (event) => setQuery(event.target.value),
+          }),
+          state.query.trim() === ''
+            ? null
+            : h(
+              'button',
+              {
+                type: 'button',
+                className: 'rs-search__clear',
+                'aria-label': t('search.clear'),
+                title: t('search.clear'),
+                onClick: () => {
+                  setQuery('');
+                  const input = searchRef.current;
+                  if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
+                },
+              },
+              icon('close', 12),
+            ),
+        );
+      }
+
+      function renderModes(state, focusSearch) {
         return h(
           'div',
           { className: 'rs-modes' },
@@ -1342,7 +1814,12 @@ window.__ModuleLoader__.load({
                 'data-active': state.mode === mode ? 'true' : 'false',
                 'aria-pressed': state.mode === mode ? 'true' : 'false',
                 title: t('modes.' + mode + '.hint'),
-                onClick: () => setMode(mode),
+                onClick: (event) => {
+                  setMode(mode);
+                  // A mouse user keeps typing; keyboard activation keeps focus
+                  // on the switch so its keys stay usable.
+                  if (event.detail > 0) focusSearch();
+                },
               },
               t('modes.' + mode),
             )),
@@ -1351,7 +1828,7 @@ window.__ModuleLoader__.load({
       }
 
       /** The `范围` switch: one segment per accepted day window. */
-      function renderRange(state) {
+      function renderRange(state, focusSearch) {
         return h(
           'div',
           { className: 'rs-modes' },
@@ -1368,7 +1845,10 @@ window.__ModuleLoader__.load({
                 'data-active': state.maxAgeDays === days ? 'true' : 'false',
                 'aria-pressed': state.maxAgeDays === days ? 'true' : 'false',
                 title: t('range.' + days + '.hint'),
-                onClick: () => setRange(days),
+                onClick: (event) => {
+                  setRange(days);
+                  if (event.detail > 0) focusSearch();
+                },
               },
               t('range.' + days),
             )),
@@ -1377,7 +1857,7 @@ window.__ModuleLoader__.load({
       }
 
       /** One row: twisty (parents only) + the row button + the actions menu. */
-      function renderRow(row) {
+      function renderRow(row, terms, index, activeIndex) {
         const menus = ctx.get('contextMenus', false);
         const menuAvailable = menus !== undefined && typeof menus.open === 'function';
         return h(
@@ -1386,6 +1866,8 @@ window.__ModuleLoader__.load({
             key: row.key,
             className: 'rs-rowwrap',
             role: 'listitem',
+            'data-row-index': String(index),
+            'data-active': index === activeIndex ? 'true' : 'false',
             'data-ancestor': row.ancestor ? 'true' : 'false',
             style: row.depth > 0 ? { paddingLeft: Math.min(row.depth, MAX_DEPTH) * 12 + 'px' } : undefined,
           },
@@ -1416,11 +1898,7 @@ window.__ModuleLoader__.load({
               'data-subagent': row.subagent ? 'true' : 'false',
               'aria-current': row.current ? 'true' : undefined,
               title: row.title,
-              onClick: () => {
-                if (!openSession(row.id)) return;
-                if (panel.getSnapshot().config.closeOnPick !== false) closePanel();
-                revealInSidebar(row.id, row.workspace);
-              },
+              onClick: () => pickRow(row),
             },
             h(
               'span',
@@ -1431,7 +1909,7 @@ window.__ModuleLoader__.load({
             h(
               'span',
               { className: 'rs-row__body' },
-              h('span', { className: 'rs-row__title' }, row.title),
+              h('span', { className: 'rs-row__title' }, markedText(row.title, terms)),
               h(
                 'span',
                 { className: 'rs-row__meta' },
@@ -1439,7 +1917,7 @@ window.__ModuleLoader__.load({
                   ? h('span', { className: 'rs-row__sub', title: t('row.bubbled'), 'aria-hidden': 'true' }, icon('branch', 11))
                   : null,
                 row.childRunning ? h('span', { className: 'rs-row__busy', 'aria-hidden': 'true' }) : null,
-                h('span', null, row.meta),
+                h('span', null, markedText(row.meta, terms)),
               ),
             ),
           ),
