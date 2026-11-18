@@ -103,6 +103,8 @@ window.__ModuleLoader__.load({
         'entry.label': '最近会话',
         'entry.open': '展开最近会话',
         'entry.close': '收起最近会话',
+        'entry.signal.warning': '有待确认的会话',
+        'entry.signal.done': '有已完成未打开的会话',
         'panel.label': '最近会话',
         'head.title': '最近会话',
         'head.close': '收起最近会话',
@@ -165,6 +167,8 @@ window.__ModuleLoader__.load({
         'entry.label': 'Recent sessions',
         'entry.open': 'Show recent sessions',
         'entry.close': 'Hide recent sessions',
+        'entry.signal.warning': 'A session is waiting for confirmation',
+        'entry.signal.done': 'A finished session is waiting to be opened',
         'panel.label': 'Recent sessions',
         'head.title': 'Recent sessions',
         'head.close': 'Hide recent sessions',
@@ -651,6 +655,24 @@ window.__ModuleLoader__.load({
 
       const rows = [];
 
+      // Presence flags for the sidebar entry: yellow when a listed top-level
+      // session is waiting on the user, green when one finished unopened. They
+      // never count. The entry always summarizes the sheet's default list (the
+      // current mode, Range window and row cap, before expanding subagents), so
+      // the entry view and the sheet compute the same flags from the same rows;
+      // folded subagents deliberately do not contribute — a finished subagent
+      // stays unread until it is opened, which would keep the green dot on.
+      function signalsFor(listed) {
+        const signals = { warning: false, done: false };
+        for (const entry of listed) {
+          const state = stateOf(entry, statuses ? statuses.get(entry.id) : undefined).state;
+          if (state === 'warning') signals.warning = true;
+          else if (state === 'done') signals.done = true;
+          if (signals.warning && signals.done) break;
+        }
+        return signals;
+      }
+
       // Separate mode ranks and filters every session on its own timestamp.
       const all = entries.length;
 
@@ -749,10 +771,12 @@ window.__ModuleLoader__.load({
         });
         const ordered = matched.slice().sort((a, b) => b.updatedAt - a.updatedAt);
         const shown = Math.min(ordered.length, limit);
+        const listed = ordered.slice(0, limit);
+        const signals = signalsFor(listed);
         if (countOnly) {
-          return { rows: EMPTY_LIST, total: ordered.length, shown, all: eligible.length, searching: true, suppressed };
+          return { rows: EMPTY_LIST, total: ordered.length, shown, all: eligible.length, searching: true, suppressed, signals };
         }
-        for (const entry of ordered.slice(0, limit)) {
+        for (const entry of listed) {
           rows.push(present(entry, 0, entry.updatedAt, {
             count: 0,
             ancestor: false,
@@ -760,23 +784,24 @@ window.__ModuleLoader__.load({
             reason: matchReason(entry),
           }));
         }
-        return { rows, total: ordered.length, shown, all: eligible.length, searching: true, suppressed };
+        return { rows, total: ordered.length, shown, all: eligible.length, searching: true, suppressed, signals };
       }
 
       if (mode === 'separate') {
         const eligible = cutoff > 0 ? entries.filter(entry => entry.updatedAt >= cutoff) : entries;
         const ordered = eligible.slice().sort((a, b) => b.updatedAt - a.updatedAt);
         const shown = Math.min(ordered.length, limit);
-        if (countOnly) return { rows: EMPTY_LIST, total: ordered.length, shown, all };
-        const limited = ordered.slice(0, limit);
-        for (const entry of limited) {
+        const listed = ordered.slice(0, limit);
+        const signals = signalsFor(listed);
+        if (countOnly) return { rows: EMPTY_LIST, total: ordered.length, shown, all, signals };
+        for (const entry of listed) {
           rows.push(present(entry, 0, entry.updatedAt, {
             count: 0,
             ancestor: false,
             markSubagent: entry.subagent,
           }));
         }
-        return { rows, total: ordered.length, shown, all };
+        return { rows, total: ordered.length, shown, all, signals };
       }
 
       // fold / hide: top-level rows only, subagent rows live under their parent.
@@ -790,8 +815,9 @@ window.__ModuleLoader__.load({
         : visibleRoots;
       const ordered = rankedRoots.slice().sort((a, b) => rankOf(b) - rankOf(a));
       const shown = Math.min(ordered.length, limit);
-      if (countOnly) return { rows: EMPTY_LIST, total: ordered.length, shown, all: allRoots };
       const limited = ordered.slice(0, limit);
+      const signals = signalsFor(limited);
+      if (countOnly) return { rows: EMPTY_LIST, total: ordered.length, shown, all: allRoots, signals };
 
       function pushTree(entry, depth) {
         const count = mode === 'fold' ? descendantCount(entry) : 0;
@@ -808,7 +834,7 @@ window.__ModuleLoader__.load({
       }
 
       for (const root of limited) pushTree(root, 0);
-      return { rows, total: ordered.length, shown, all: allRoots };
+      return { rows, total: ordered.length, shown, all: allRoots, signals };
     }
 
     /* ----------------------------------------------------------------- styles */
@@ -828,6 +854,7 @@ window.__ModuleLoader__.load({
       '.rs-entry__icon { flex: none; display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; color: var(--dsw-alias-label-secondary); }',
       '.rs-entry__label { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
       '.rs-entry__count { flex: none; font-size: 12px; line-height: 16px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }',
+      '.rs-entry__signals { flex: none; display: inline-flex; align-items: center; gap: 4px; }',
       '.rs-entry__chevron { flex: none; display: inline-flex; color: var(--dsw-alias-label-tertiary); transition: transform 150ms ease; }',
       '.rs-entry[aria-expanded="true"] .rs-entry__chevron { transform: rotate(180deg); }',
 
@@ -1365,6 +1392,16 @@ window.__ModuleLoader__.load({
         const wide = props.wide !== false;
         const setRef = useCallback((element) => { setAnchor(element); }, []);
         if (!wide) return null;
+        // Presence, not counts: a yellow dot for a top-level session waiting on
+        // the user and a green one for a finished session not opened yet. Both
+        // can show at once, in urgency order, and both reuse the sheet's dot
+        // states. Folded subagents do not contribute (see buildView).
+        const signals = view.signals || { warning: false, done: false };
+        const signalLabels = [];
+        if (signals.warning) signalLabels.push(t('entry.signal.warning'));
+        if (signals.done) signalLabels.push(t('entry.signal.done'));
+        const signalText = signalLabels.join(' · ');
+        const baseTitle = state.open ? t('entry.close') : t('entry.open');
         return h(
           'button',
           {
@@ -1374,12 +1411,25 @@ window.__ModuleLoader__.load({
             'aria-expanded': state.open ? 'true' : 'false',
             'aria-controls': PANEL_ID,
             'aria-haspopup': 'dialog',
-            title: state.open ? t('entry.close') : t('entry.open'),
+            title: signalText === '' ? baseTitle : baseTitle + ' · ' + signalText,
             onClick: togglePanel,
           },
           h('span', { className: 'rs-entry__icon', 'aria-hidden': 'true' }, icon('clock', 16)),
           h('span', { className: 'rs-entry__label' }, t('entry.label')),
           view.shown > 0 ? h('span', { className: 'rs-entry__count' }, String(view.shown)) : null,
+          signalText === ''
+            ? null
+            : h(
+              'span',
+              { className: 'rs-entry__signals' },
+              signals.warning
+                ? h('span', { className: 'rs-dot', 'data-state': 'warning', 'aria-hidden': 'true' })
+                : null,
+              signals.done
+                ? h('span', { className: 'rs-dot', 'data-state': 'done', 'aria-hidden': 'true' })
+                : null,
+              h('span', { className: 'rs-sr' }, signalText),
+            ),
           h('span', { className: 'rs-entry__chevron', 'aria-hidden': 'true' }, icon('chevronDown', 14)),
         );
       }

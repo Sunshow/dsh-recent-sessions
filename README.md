@@ -9,7 +9,7 @@
 
 </div>
 
-> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. A search field at the top filters by session title, workspace name or path, session ID and state; opening the sheet focuses it, and Escape clears it. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen with a switch in the sheet that saves back to the profile. A second switch limits the list to the last 1 / 7 / 30 days. The sheet spans the sidebar column and paints an opaque surface.
+> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. A search field at the top filters by session title, workspace name or path, session ID and state; opening the sheet focuses it, and Escape clears it. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen with a switch in the sheet that saves back to the profile. A second switch limits the list to the last 1 / 7 / 30 days. The entry row also carries the list's status dots — yellow for a session waiting on you, green for a finished session not opened yet — and shows both at once, without counts. The sheet spans the sidebar column and paints an opaque surface.
 
 ## English quick start
 
@@ -19,7 +19,7 @@ Install from the Harness **Plugins** page → **Add plugin**:
 github:Sunshow/dsh-recent-sessions
 
 # or pin a version
-github:Sunshow/dsh-recent-sessions#v0.2.0
+github:Sunshow/dsh-recent-sessions#v0.3.0
 ```
 
 Then open the switch for `dsh-recent-sessions` in the installed list. The repository ships the plugin files as-is; nothing needs building.
@@ -38,6 +38,17 @@ Opening the sheet puts the cursor in its search field, so you can start typing r
 | `showWorkspace` | `true` | show the workspace name on each row |
 | `defaultCollapsed` | `true` | start with the sheet closed |
 | `refreshMs` | `30000` | relative-time refresh interval |
+
+## Entry status dots
+
+The entry row summarizes the top-level rows the sheet lists when it opens, so the sidebar tells you that something needs a look without opening the sheet:
+
+| Dot | Meaning | Cleared when |
+| --- | --- | --- |
+| yellow | a listed session is waiting for approval, a plan review or an answer | you act on that session |
+| green | a listed session finished and has not been opened yet | you open that session |
+
+Both dots appear side by side when both states exist, and no counts are shown. Hovering the row explains the dots in the active language; screen readers hear the same text as part of the row label. The signals follow the sheet's default list — the current subagent mode, Range window and the `maxItems` cap; search and expansion do not change them — so an indicator always has a matching top-level row when the sheet opens. Folded subagent sessions do not add an indicator of their own (a finished subagent stays unread until it is opened, which would keep the green dot lit); `separate` mode gives subagents their own rows so their states do show, and `hide` mode leaves them out entirely.
 
 ## Search
 
@@ -68,10 +79,12 @@ Limitations: archived sessions are not listed (they stay in the sidebar's archiv
 DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多一行「最近会话」，
 点开是一张浮在工作区列表上方的面板：按最后活动时间列出最近的会话，点一行直接切过去。
 面板顶部的搜索框按会话标题、工作区名称 / 路径、Session ID 和状态过滤；点开浮层时它自动取得焦点，`Esc` 清空并脱离焦点。
+入口行还会带上状态点：有待确认的会话亮黄点、已完成未打开的会话亮绿点，两种可以同时出现。
 
 ## 功能
 
 - **一行入口**：`最近会话 12`，和「设置」同一款式与高度；数字是**列表里实际列出**的条数。侧栏收成细轨道时整行隐藏，不留圆点。
+- **入口带状态点**：面板打开时列出的顶层行中，只要有一个在等待确认（批准 / 计划确认 / 回答），入口行就亮黄点；只要有一个跑完还没打开，就亮绿点。两种同时存在时并排显示，不显示数量；悬停整行会看到当前语言下的说明，读屏也会把它算进入口行的名称。统计范围就是面板的默认列表——受「子代理」「范围」和「条数上限」影响，搜索和展开不改变它，所以亮起的点一定能对应到一个顶层行；折叠在子代理行里的会话不单独亮（子代理跑完通常要打开它才会消掉绿点，并进父行会让入口一直亮着），选择「单独」时它们各自成行、状态照常显示，选择「隐藏」则不列子代理。
 - **直接搜**：浮层打开时搜索框自动取得焦点，打字即过滤；可以搜会话标题、工作区名称 / 路径、Session ID 和状态。焦点不在搜索框时按任意字符也会回到搜索框继续输入（空格仍用于激活当前聚焦的行或开关）。
 - **占满侧栏**：面板宽度取自**侧栏列**（不是入口行本身，所以底部同排有别的插件时也照样占满），浮在入口上方。面板用不透明的浮起底色，不会透出后面的工作区列表。想让面板再往右多伸一点（压到对话区），把 `panelOverhang` 设成 40、80 这样的像素值即可。
 - **点一行切过去，并定位到侧栏**：走官方导航（`uiWorkspace.openSession`）；随后面板收起，侧栏自动滚到该会话所在的工作区分组，必要时先展开被折叠的分组，当前会话整行高亮。不想让它自动收起就把 `closeOnPick` 设成 `false`。
@@ -160,7 +173,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 github:Sunshow/dsh-recent-sessions
 
 # 或固定版本
-github:Sunshow/dsh-recent-sessions#v0.2.0
+github:Sunshow/dsh-recent-sessions#v0.3.0
 ```
 
 安装后在已安装列表里打开 `dsh-recent-sessions` 的开关。仓库里提交的就是可直接运行的插件文件，
