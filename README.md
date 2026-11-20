@@ -19,7 +19,7 @@ Install from the Harness **Plugins** page → **Add plugin**:
 github:Sunshow/dsh-recent-sessions
 
 # or pin a version
-github:Sunshow/dsh-recent-sessions#v0.5.0
+github:Sunshow/dsh-recent-sessions#v0.5.1
 ```
 
 Then open the switch for `dsh-recent-sessions` in the installed list. The repository ships the plugin files as-is; nothing needs building.
@@ -66,7 +66,8 @@ The field under the title is focused the moment you open the sheet, and a printa
 The third switch in the sheet (`进行中栏` / **Live bar**) keeps a strip at the bottom of the window listing the sessions that need your eyes: **running**, **waiting** on you, and **finished but not opened yet**. The strip fills the frame's `shell.bottom` seat — a slot the harness reserves below all three columns and sizes from its content — so the bar reduces the columns' height instead of covering them: the workspace list, the conversation and the sidebar all stay usable and visible.
 
 - **What shows up**: a session whose turn is running; one waiting for approval, a plan review or an answer; and one that finished with no one having opened it yet — opening it clears the chip. **The dot carries the state and the chip carries only the title** (blue running, yellow waiting, green finished-unread); hovering a chip, or a screen reader, spells out the state, the subagent marker and the workspace, and the strip stays 28 px tall. In `fold` mode a main session whose subagent is working is listed too — blue for that work, or yellow when the subagent is the one waiting — and ranked by the newest activity in its subtree; `hide` keeps the subagent row out but still reports its work and its pending question on the main row; `separate` gives every subagent its own chip, unread ones included. A folded subagent's unread flag deliberately does not bubble into its main row: opening the main session does not clear it, so it would glow forever — the same call the sidebar's status dots make.
-- **Needs you first**: waiting sessions come first, then finished-unread ones, then merely running ones; within each group the order is newest activity. The lead is a bare count badge, so the strip spends no width on words: its tooltip and status text give the breakdown (`1 个待确认 · 2 个未读 · 3 个进行中`). The chips scroll horizontally when they overflow.
+- **Pinned sessions stay**: a session pinned in the sidebar (`置顶`) is kept on the strip whatever its state — idle included — in the sidebar's pin order at the front, marked with a pin glyph, until you unpin it (right-click → `取消置顶`). Unpinning removes it again unless it is running, waiting or unread. Archived pinned sessions have no row.
+- **Needs you first**: after the pinned ones, waiting sessions come first, then finished-unread ones, then merely running ones; within each group the order is newest activity. The lead is a bare count badge, so the strip spends no width on words: its tooltip and status text give the breakdown (`1 个待确认 · 2 个未读 · 3 个进行中`). The chips scroll horizontally when they overflow.
 - **Too many to fit**: the collapsed strip lines the chips up in one row and scrolls sideways. As soon as two or more sessions are in flight it also offers `展开` at the right end, which pulls the strip up into a vertically scrolling list (capped at 40% of the window height) where every row adds its workspace (and its subagent marker) under the title; picking a row opens it and folds the list back, and `收起` closes it without choosing. Nothing is ever dropped from either view.
 - **Independent of the sheet's filters**: the bar ignores the Range window (a three-day run is still running), `maxItems` and search, so nothing can silently hide a session you should see. Archived and blank sessions stay out, exactly as in the sheet.
 - **Stable height**: once enabled, the strip keeps its height even with nothing to show and says `暂无进行中或未读的会话`. A bar that appeared and disappeared would resize every column mid-task. While the preference is off, the seat is not claimed at all — it renders nothing and reserves no space.
@@ -127,7 +128,8 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 面板里的第三个开关是「进行中栏」。打开后，窗口底部出现一条常驻的会话栏，列**需要你留意的会话**：在跑的、等你的，以及**跑完还没打开的**。
 
 - **哪些会进来**：正在跑 turn 的；等你批准 / 确认计划 / 回答的；以及已完成但还没打开的（打开那个会话，它就从栏上消失）。**状态只用圆点表示，格子上只写标题**（蓝=在跑、黄=等你、绿=跑完未读）；悬停或读屏才会补出状态、子代理标记和工作区，整条栏高 28px，不拿宽度去写状态词。折叠档里，主会话的子代理在跑也算（蓝点），子代理在等你确认时同样会浮上来（黄点）；这两类都按整棵子树的最新活动排序。隐藏档不列子代理行，但主会话仍会替它显示在跑或在等。单独档让子代理各占一格，已完成未读的也列。折叠进主会话的子代理即使已完成未读也**不会**冒上来——打开主会话并不会消掉它的未读标记，会一直亮着；侧栏的状态点也是这个口径。
-- **等你的排前面**：等确认的排最前，其次是已完成未读的，最后是还在跑的；同组内按最新活动排序，放不下时横向滚动。开头只有一个数字（就是条数），不写状态词；三类各多少放在它的悬停提示和读屏文本里（「1 个待确认 · 2 个未读 · 3 个进行中」）。
+- **置顶的会话不会消失**：在侧栏「置顶」过的会话会一直留在栏上——空闲也留——按置顶顺序排在最前，标题前带一个图钉标记；只有你取消置顶（右键 → 取消置顶）才会走。取消后如果它既不在跑、也不在等、也不是未读，就自然消失；已归档的置顶会话不占行。
+- **等你的排前面**：排在图钉会话之后，等确认的最前，其次是已完成未读的，最后是还在跑的；同组内按最新活动排序，放不下时横向滚动。开头只有一个数字（就是条数），不写状态词；三类各多少放在它的悬停提示和读屏文本里（「1 个待确认 · 2 个未读 · 3 个进行中」）。
 - **太多怎么办**：收起状态是一行，放不下就横向滚动。只要有两个以上进行中的会话，右端就会出现「展开」——把这条栏向上拉成竖排列表（最高 40% 窗口高度、内部纵向滚动），每行在标题下面补出工作区（子代理再加一个标记）；点一行切过去，列表自动收起；点「收起」只收列表不选。两种形态都不会丢掉任何会话。
 - **不受面板筛选影响**：不看「范围」（跑了一周的会话照样在），不受「条数上限」，也不参与搜索，任何设置都不会悄悄藏掉一个你该看到的会话。已归档和空白会话照旧不出现。
 - **高度稳定**：开关打开后，没有可列的会话也会保留一条「暂无进行中或未读的会话」，不会因为会话开始 / 结束让三栏高度忽大忽小；开关关掉时这个席位根本不注册，不渲染、不占高度。
@@ -209,7 +211,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 github:Sunshow/dsh-recent-sessions
 
 # 或固定版本
-github:Sunshow/dsh-recent-sessions#v0.5.0
+github:Sunshow/dsh-recent-sessions#v0.5.1
 ```
 
 安装后在已安装列表里打开 `dsh-recent-sessions` 的开关。仓库里提交的就是可直接运行的插件文件，

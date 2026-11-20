@@ -158,6 +158,7 @@ window.__ModuleLoader__.load({
         'bar.collapse.hint': '收起进行中会话列表',
         'bar.list': '进行中与未读会话',
         'bar.menuHint': '右键更多操作',
+        'bar.pinned': '已固定',
         'bar.childRunning': '子代理运行中',
         'bar.childWarning': '子代理待确认',
         'row.menu': '会话操作',
@@ -242,6 +243,7 @@ window.__ModuleLoader__.load({
         'bar.collapse.hint': 'Collapse the list of sessions in progress',
         'bar.list': 'Sessions in progress and unread',
         'bar.menuHint': 'Right-click for actions',
+        'bar.pinned': 'Pinned',
         'bar.childRunning': 'Subagent running',
         'bar.childWarning': 'Subagent needs you',
         'row.menu': 'Session actions',
@@ -305,6 +307,10 @@ window.__ModuleLoader__.load({
       ],
       chevronDown: [{ d: 'M4 6.2 8 10.2l4-4' }],
       chevronUp: [{ d: 'M4 9.8 8 5.8l4 4' }],
+      pin: [
+        { d: 'M8 1.9c-2.3 0-4.1 1.7-4.1 3.9 0 2.7 4.1 8.3 4.1 8.3s4.1-5.6 4.1-8.3c0-2.2-1.8-3.9-4.1-3.9Z' },
+        { d: 'M8 4.2a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2Z' },
+      ],
       chevronRight: [{ d: 'M6.2 4 10.2 8l-4 4' }],
       search: [
         { d: 'M7.1 2.7a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8Z' },
@@ -692,6 +698,7 @@ window.__ModuleLoader__.load({
           current: entry.id === currentId,
           ancestor: extra.ancestor,
           subagent: entry.subagent,
+          pinned: extra.pinned === true,
           depth,
           hasChildren: extra.count > 0 && depth < MAX_DEPTH,
           expanded: expanded.has(entry.id),
@@ -708,9 +715,15 @@ window.__ModuleLoader__.load({
       // which sessions are working right now. It ignores the Range window (a
       // three-day run is still running), the row cap and the search, and keeps
       // the fold semantics: a subagent's run — or its pending question — makes
-      // its main row count too.
+      // its main row count too. Sessions the user pinned in the sidebar are
+      // kept whatever their state, so only an explicit unpin takes them away.
       if (ongoingOnly) {
         const statusOf = entry => (statuses ? statuses.get(entry.id) : undefined);
+        /** A pinned id is worth a row even when nothing is happening. */
+        const pinnedIds = workspaces && Array.isArray(workspaces.pinnedSessionIds)
+          ? workspaces.pinnedSessionIds
+          : EMPTY_LIST;
+        const pinnedSet = new Set(pinnedIds);
         // `pendingInteraction` is keyed to the session that must answer it, so a
         // waiting subagent needs its own probe; a main row's own state says
         // nothing about it.
@@ -724,65 +737,67 @@ window.__ModuleLoader__.load({
           }
           return false;
         }
-        const candidates = mode === 'fold' ? roots : entries;
-        const ranked = [];
-        for (const entry of candidates) {
-          if (mode === 'hide' && entry.subagent) continue;
-          const info = stateOf(entry, statusOf(entry));
-          const ownPending = info.state === 'warning';
-          const ownRunning = info.state === 'ongoing';
-          // A finished-but-unopened session belongs here too: the strip is how
-          // you notice that something is waiting to be looked at. A folded
-          // subagent's unread flag is excluded on purpose — opening the main
-          // session does not clear it, so it would glow forever (the sidebar
-          // dot makes the same call; `separate` lists it, and shows it here).
-          const ownDone = info.state === 'done';
+        /**
+         * The row the bar draws for one session: its own state first, then a
+         * descendant's pending question or run (a chip must never read "idle"
+         * while work goes on), then the state label the sheet uses.
+         */
+        function barRow(entry, pinned) {
           const childPending = mode !== 'separate' && subtreePending(entry, 0);
           const childRunning = mode !== 'separate' && subtreeRunning(entry);
-          if (!ownPending && !ownRunning && !ownDone && !childPending && !childRunning) continue;
-          ranked.push({
-            entry,
-            ownPending,
-            ownDone,
-            childPending,
-            childRunning,
-            // Answers first, then things to read, then things still working:
-            // only the first two need the user's attention.
-            bucket: ownPending || childPending ? 0 : (ownDone && !childRunning ? 1 : 2),
-            rank: mode === 'fold' ? activityOf(entry) : entry.updatedAt,
-          });
-        }
-        ranked.sort((a, b) => (a.bucket - b.bucket) || (b.rank - a.rank));
-        for (const item of ranked) {
-          const row = present(item.entry, 0, item.rank, {
-            count: mode === 'fold' ? descendantCount(item.entry) : 0,
+          const rank = mode === 'fold' ? activityOf(entry) : entry.updatedAt;
+          const row = present(entry, 0, rank, {
+            count: mode === 'fold' ? descendantCount(entry) : 0,
             ancestor: false,
-            markSubagent: item.entry.subagent,
+            markSubagent: entry.subagent,
+            pinned,
           });
-          // A chip must never say "Idle" while a descendant works or waits, and
-          // a waiting descendant matters more than the main session's own run.
-          if (row.state !== 'warning' && item.childPending) {
+          if (row.state !== 'warning' && childPending) {
             row.state = 'warning';
             row.stateLabel = t('bar.childWarning');
-          } else if (row.state !== 'ongoing' && row.state !== 'warning' && item.childRunning) {
+          } else if (row.state !== 'ongoing' && row.state !== 'warning' && childRunning) {
             row.state = 'ongoing';
             row.stateLabel = t('bar.childRunning');
           }
           if (row.state === 'done') row.stateLabel = t('bar.doneLabel');
-          row.waiting = row.state === 'warning';
-          row.settled = row.state === 'done';
-          rows.push(row);
+          return {
+            row,
+            rank,
+            // Answers first, then things to read, then things still working.
+            bucket: row.state === 'warning' ? 0 : row.state === 'done' ? 1 : row.state === 'ongoing' ? 2 : 3,
+          };
         }
-        const waiting = rows.filter(row => row.waiting === true).length;
-        const done = rows.filter(row => row.settled === true).length;
+
+        // Pinned first, in the sidebar's pin order: they must stay reachable
+        // even when the chip run scrolls sideways, and their position must not
+        // move with activity. An archived or unknown id simply has no row.
+        for (const id of pinnedIds) {
+          const entry = index.get(id);
+          if (entry === undefined) continue;
+          rows.push(barRow(entry, true).row);
+        }
+
+        const candidates = mode === 'fold' ? roots : entries;
+        const ranked = [];
+        for (const entry of candidates) {
+          if (pinnedSet.has(entry.id)) continue;
+          if (mode === 'hide' && entry.subagent) continue;
+          const built = barRow(entry, false);
+          if (built.bucket === 3) continue;
+          ranked.push(built);
+        }
+        ranked.sort((a, b) => (a.bucket - b.bucket) || (b.rank - a.rank));
+        for (const item of ranked) rows.push(item.row);
+
         return {
           rows,
           total: rows.length,
           shown: rows.length,
           all: entries.length,
-          waiting,
-          done,
-          running: rows.length - waiting - done,
+          waiting: rows.filter(row => row.state === 'warning').length,
+          done: rows.filter(row => row.state === 'done').length,
+          running: rows.filter(row => row.state === 'ongoing').length,
+          pinned: rows.filter(row => row.pinned === true).length,
         };
       }
 
@@ -1106,6 +1121,7 @@ window.__ModuleLoader__.load({
       '.rs-bar__chip[data-current="true"] { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-active); }',
       '.rs-bar__chip:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }',
       '.rs-bar__title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
+      '.rs-bar__pin { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }',
       '.rs-bar__rows { display: flex; flex-direction: column; gap: 2px; max-height: min(40vh, 260px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 3px; scrollbar-width: thin; }',
       '.rs-bar__rows::-webkit-scrollbar { width: 8px; }',
       '.rs-bar__rows::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l1); border-radius: 4px; }',
@@ -1748,6 +1764,7 @@ window.__ModuleLoader__.load({
         const breakdown = segments.join(' · ');
         const describe = row => [
           row.title,
+          row.pinned ? t('bar.pinned') : '',
           row.subagent ? t('row.subagent') : '',
           row.stateLabel,
           row.workspace,
@@ -1765,7 +1782,7 @@ window.__ModuleLoader__.load({
           },
           h(
             'span',
-            { className: 'rs-bar__top', title: active ? breakdown : undefined },
+            { className: 'rs-bar__top', title: breakdown === '' ? undefined : breakdown },
             h(
               'span',
               { className: 'rs-bar__lead' },
@@ -1798,6 +1815,9 @@ window.__ModuleLoader__.load({
                     onContextMenu: barContextMenu(row),
                   },
                   h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+                  row.pinned
+                    ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
+                    : null,
                   h(
                     'span',
                     { className: 'rs-bar__rowbody' },
@@ -1831,6 +1851,9 @@ window.__ModuleLoader__.load({
                     onContextMenu: barContextMenu(row),
                   },
                   h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+                  row.pinned
+                    ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
+                    : null,
                   h('span', { className: 'rs-bar__title' }, row.title),
                 );
               }),
