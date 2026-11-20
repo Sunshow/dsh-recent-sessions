@@ -8,11 +8,12 @@
  *
  *   1. `GET /api/dsh-recent-sessions/config` — the resolved plugin config, so a
  *      `cordis.patch.yml` default reaches the panel;
- *   2. `POST /api/dsh-recent-sessions/config` — persist `subagentMode` through
- *      the profile's `configEditor`, so the switch inside the panel is a real
- *      setting instead of page-local state.
+ *   2. `POST /api/dsh-recent-sessions/config` — persist the sheet's switches
+ *      (`subagentMode`, `maxAgeDays`, `activityBar`) through the profile's
+ *      `configEditor`, so a switch inside the plugin is a real setting instead
+ *      of page-local state.
  *
- * `subagentMode` is declared volatile, so flipping it updates the live config
+ * Those fields are declared volatile, so flipping one updates the live config
  * in place instead of reloading the plugin; the browser half still keeps a
  * local copy because the panel must work even when no editor is available.
  */
@@ -36,6 +37,7 @@ const DEFAULTS = {
   closeOnPick: true,
   showWorkspace: true,
   defaultCollapsed: true,
+  activityBar: false,
   refreshMs: 30000,
 }
 
@@ -87,6 +89,7 @@ function buildSchema(z) {
     closeOnPick: z.boolean().default(DEFAULTS.closeOnPick),
     showWorkspace: z.boolean().default(DEFAULTS.showWorkspace),
     defaultCollapsed: z.boolean().default(DEFAULTS.defaultCollapsed),
+    activityBar: z.boolean().default(DEFAULTS.activityBar).volatile(),
     refreshMs: z.natural().min(5000).max(600000).default(DEFAULTS.refreshMs),
   })
 }
@@ -128,6 +131,7 @@ function resolveConfig(raw) {
     closeOnPick: typeof plain(source.closeOnPick) === 'boolean' ? plain(source.closeOnPick) : DEFAULTS.closeOnPick,
     showWorkspace: typeof plain(source.showWorkspace) === 'boolean' ? plain(source.showWorkspace) : DEFAULTS.showWorkspace,
     defaultCollapsed: typeof plain(source.defaultCollapsed) === 'boolean' ? plain(source.defaultCollapsed) : DEFAULTS.defaultCollapsed,
+    activityBar: typeof plain(source.activityBar) === 'boolean' ? plain(source.activityBar) : DEFAULTS.activityBar,
     refreshMs: clampInteger(plain(source.refreshMs), DEFAULTS.refreshMs, 5000, 600000),
   }
 }
@@ -266,6 +270,10 @@ export function apply(ctx, config) {
           if (body.maxAgeDays !== undefined) {
             if (!AGE_WINDOWS.includes(body.maxAgeDays)) throw new Error('invalid maxAgeDays')
             patch.maxAgeDays = body.maxAgeDays
+          }
+          if (body.activityBar !== undefined) {
+            if (typeof body.activityBar !== 'boolean') throw new Error('invalid activityBar')
+            patch.activityBar = body.activityBar
           }
           if (Object.keys(patch).length === 0) throw new Error('nothing to change')
           const editor = configEditor(ctx)

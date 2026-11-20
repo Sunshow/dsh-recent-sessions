@@ -2,7 +2,8 @@
 #
 # The Host half only serves the resolved config to the browser half:
 #   GET  /api/dsh-recent-sessions/config   -> current values (+ canPersist)
-#   POST /api/dsh-recent-sessions/config   -> persist subagentMode into the profile patch
+#   POST /api/dsh-recent-sessions/config   -> persist subagentMode / maxAgeDays / activityBar
+#                                             into the profile patch
 #
 # Every key below can be overridden by a row with the same id in the profile's
 # cordis.patch.yml (a matching override replaces the complete config):
@@ -17,6 +18,9 @@
 #   closeOnPick       collapse the sheet after a row opens a session (default true)
 #   showWorkspace     show the workspace name on each row (default true)
 #   defaultCollapsed  start with the sheet closed (default true)
+#   activityBar       keep the bottom live bar of sessions in progress (default false);
+#                     the strip sits in the frame's `shell.bottom` seat, so its height
+#                     reduces the columns instead of covering them
 #   refreshMs         relative-time refresh interval in ms (default 30000)
 - insert:
     - id: recent-sessions
@@ -29,3 +33,4 @@
         closeOnPick: true
         showWorkspace: true
         defaultCollapsed: true
+        activityBar: false

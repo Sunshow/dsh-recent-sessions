@@ -5,11 +5,15 @@
 //
 //   sidebar.footer.action  the `最近会话 12` entry row, directly above Settings
 //   shell.overlay          the sheet itself, floating over the workspace list
+//   shell.bottom           the optional live bar: the sessions in progress,
+//                          below every column and never over anything
 //
 // Why the overlay slot instead of a document.body portal: `shell.overlay` is
 // the frame-wide layer outside every column's scroll container, and it is
 // click-through until an entry opts back into pointer events — exactly the
-// surface a sheet anchored to the sidebar foot needs.
+// surface a sheet anchored to the sidebar foot needs. `shell.bottom` is the
+// opposite: a reserved strip whose height reduces the columns, so a bar there
+// cannot cover the list it summarizes.
 //
 // Data comes from the official Client snapshots, never from a new store:
 //   sessions.list       byId summaries: title / updatedAt / running / blank /
@@ -68,11 +72,13 @@ window.__ModuleLoader__.load({
     const CONFIG_URL = '/api/dsh-recent-sessions/config';
     const MODE_KEY = 'dsh.recent-sessions.subagent-mode.v1';
     const PANEL_ID = 'dsh-recent-sessions-panel';
+    const BAR_ID = 'dsh-recent-sessions-activity-bar';
 
     const MODES = ['fold', 'hide', 'separate'];
     /** Day windows the sheet offers; 0 keeps every session regardless of age. */
     const AGE_WINDOWS = [0, 1, 7, 30];
     const RANGE_KEY = 'dsh.recent-sessions.max-age-days.v1';
+    const BAR_KEY = 'dsh.recent-sessions.activity-bar.v1';
     const DEFAULTS = {
       subagentMode: 'fold',
       maxItems: 12,
@@ -81,6 +87,7 @@ window.__ModuleLoader__.load({
       closeOnPick: true,
       showWorkspace: true,
       defaultCollapsed: true,
+      activityBar: false,
       refreshMs: 30000,
     };
 
@@ -133,6 +140,25 @@ window.__ModuleLoader__.load({
         'range.1.hint': '只看最近 24 小时内活动过的会话',
         'range.7.hint': '只看最近 7 天内活动过的会话',
         'range.30.hint': '只看最近 30 天内活动过的会话',
+        'bar.switch': '进行中栏',
+        'bar.on': '常驻',
+        'bar.off': '关闭',
+        'bar.on.hint': '在窗口底部常驻一条会话栏：进行中、等待确认和已完成未读的会话都在这里',
+        'bar.off.hint': '不显示底部进行中栏',
+        'bar.region': '进行中与未读会话',
+        'bar.empty': '暂无进行中或未读的会话',
+        'bar.seg.running': '{count} 个进行中',
+        'bar.seg.waiting': '{count} 个待确认',
+        'bar.seg.done': '{count} 个未读',
+        'bar.doneLabel': '已完成未读',
+        'bar.hide': '关闭进行中栏',
+        'bar.expand': '展开',
+        'bar.expand.hint': '上拉列出全部进行中的会话',
+        'bar.collapse': '收起',
+        'bar.collapse.hint': '收起进行中会话列表',
+        'bar.list': '进行中与未读会话',
+        'bar.childRunning': '子代理运行中',
+        'bar.childWarning': '子代理待确认',
         'row.menu': '会话操作',
         'row.blank': '新会话',
         'row.untitled': '未命名会话',
@@ -197,6 +223,25 @@ window.__ModuleLoader__.load({
         'range.1.hint': 'Only sessions active in the last 24 hours',
         'range.7.hint': 'Only sessions active in the last 7 days',
         'range.30.hint': 'Only sessions active in the last 30 days',
+        'bar.switch': 'Live bar',
+        'bar.on': 'On',
+        'bar.off': 'Off',
+        'bar.on.hint': 'Keep a session bar at the bottom of the window: running, waiting and finished-unread sessions',
+        'bar.off.hint': 'Do not show the bottom live bar',
+        'bar.region': 'Sessions in progress and unread',
+        'bar.empty': 'Nothing running or unread',
+        'bar.seg.running': '{count} running',
+        'bar.seg.waiting': '{count} waiting',
+        'bar.seg.done': '{count} unread',
+        'bar.doneLabel': 'Finished, unread',
+        'bar.hide': 'Close the live bar',
+        'bar.expand': 'Expand',
+        'bar.expand.hint': 'Pull up every session in progress',
+        'bar.collapse': 'Collapse',
+        'bar.collapse.hint': 'Collapse the list of sessions in progress',
+        'bar.list': 'Sessions in progress and unread',
+        'bar.childRunning': 'Subagent running',
+        'bar.childWarning': 'Subagent needs you',
         'row.menu': 'Session actions',
         'row.blank': 'New session',
         'row.untitled': 'Untitled session',
@@ -257,6 +302,7 @@ window.__ModuleLoader__.load({
         { d: 'M8 5.2V8.4l2.2 1.4' },
       ],
       chevronDown: [{ d: 'M4 6.2 8 10.2l4-4' }],
+      chevronUp: [{ d: 'M4 9.8 8 5.8l4 4' }],
       chevronRight: [{ d: 'M6.2 4 10.2 8l-4 4' }],
       search: [
         { d: 'M7.1 2.7a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8Z' },
@@ -458,6 +504,7 @@ window.__ModuleLoader__.load({
       const t = input.t;
       const localeId = input.localeId;
       const countOnly = input.countOnly === true;
+      const ongoingOnly = input.ongoingOnly === true;
       const query = typeof input.query === 'string' ? input.query : '';
       const terms = searchTerms(query);
       const searching = terms.length > 0;
@@ -654,6 +701,88 @@ window.__ModuleLoader__.load({
       }
 
       const rows = [];
+
+      // The bottom "in progress" bar asks a different question than the sheet:
+      // which sessions are working right now. It ignores the Range window (a
+      // three-day run is still running), the row cap and the search, and keeps
+      // the fold semantics: a subagent's run — or its pending question — makes
+      // its main row count too.
+      if (ongoingOnly) {
+        const statusOf = entry => (statuses ? statuses.get(entry.id) : undefined);
+        // `pendingInteraction` is keyed to the session that must answer it, so a
+        // waiting subagent needs its own probe; a main row's own state says
+        // nothing about it.
+        function subtreePending(entry, depth) {
+          if (depth > MAX_DEPTH + 4) return false;
+          for (const child of children.get(entry.id) || EMPTY_LIST) {
+            const status = statuses ? statuses.get(child.id) : undefined;
+            const kind = status && status.pendingInteraction ? status.pendingInteraction.kind : undefined;
+            if (visiblePendingKind(kind) !== undefined) return true;
+            if (subtreePending(child, depth + 1)) return true;
+          }
+          return false;
+        }
+        const candidates = mode === 'fold' ? roots : entries;
+        const ranked = [];
+        for (const entry of candidates) {
+          if (mode === 'hide' && entry.subagent) continue;
+          const info = stateOf(entry, statusOf(entry));
+          const ownPending = info.state === 'warning';
+          const ownRunning = info.state === 'ongoing';
+          // A finished-but-unopened session belongs here too: the strip is how
+          // you notice that something is waiting to be looked at. A folded
+          // subagent's unread flag is excluded on purpose — opening the main
+          // session does not clear it, so it would glow forever (the sidebar
+          // dot makes the same call; `separate` lists it, and shows it here).
+          const ownDone = info.state === 'done';
+          const childPending = mode !== 'separate' && subtreePending(entry, 0);
+          const childRunning = mode !== 'separate' && subtreeRunning(entry);
+          if (!ownPending && !ownRunning && !ownDone && !childPending && !childRunning) continue;
+          ranked.push({
+            entry,
+            ownPending,
+            ownDone,
+            childPending,
+            childRunning,
+            // Answers first, then things to read, then things still working:
+            // only the first two need the user's attention.
+            bucket: ownPending || childPending ? 0 : (ownDone && !childRunning ? 1 : 2),
+            rank: mode === 'fold' ? activityOf(entry) : entry.updatedAt,
+          });
+        }
+        ranked.sort((a, b) => (a.bucket - b.bucket) || (b.rank - a.rank));
+        for (const item of ranked) {
+          const row = present(item.entry, 0, item.rank, {
+            count: mode === 'fold' ? descendantCount(item.entry) : 0,
+            ancestor: false,
+            markSubagent: item.entry.subagent,
+          });
+          // A chip must never say "Idle" while a descendant works or waits, and
+          // a waiting descendant matters more than the main session's own run.
+          if (row.state !== 'warning' && item.childPending) {
+            row.state = 'warning';
+            row.stateLabel = t('bar.childWarning');
+          } else if (row.state !== 'ongoing' && row.state !== 'warning' && item.childRunning) {
+            row.state = 'ongoing';
+            row.stateLabel = t('bar.childRunning');
+          }
+          if (row.state === 'done') row.stateLabel = t('bar.doneLabel');
+          row.waiting = row.state === 'warning';
+          row.settled = row.state === 'done';
+          rows.push(row);
+        }
+        const waiting = rows.filter(row => row.waiting === true).length;
+        const done = rows.filter(row => row.settled === true).length;
+        return {
+          rows,
+          total: rows.length,
+          shown: rows.length,
+          all: entries.length,
+          waiting,
+          done,
+          running: rows.length - waiting - done,
+        };
+      }
 
       // Presence flags for the sidebar entry: yellow when a listed top-level
       // session is waiting on the user, green when one finished unopened. They
@@ -947,6 +1076,50 @@ window.__ModuleLoader__.load({
       '.rs-empty__hint { font-size: 11px; line-height: 17px; color: var(--dsw-alias-label-tertiary); }',
       '.rs-empty__action { align-self: center; margin-top: 6px; padding: 4px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 11px; line-height: 16px; cursor: pointer; }',
       '@media (hover: hover) { .rs-empty__action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); } }',
+
+      /* live bar (shell.bottom) ------------------------------------------ */
+      // The frame already paints `--dsw-alias-bg-base` behind this seat and sizes
+      // the strip from its content, so the bar only owns its inner layout: one
+      // row that never wraps, a scrollable chip run, and a hairline above it.
+      '.rs-bar { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; min-height: 28px; padding: 0 8px 0 14px; border-top: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 12px; line-height: 18px; }',
+      // The pull-up list stacks the header over a vertically scrolling run of
+      // rows; the grid keeps the lead left and the controls right in both modes.
+      '.rs-bar[data-expanded="true"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top actions" "body body"; align-items: center; row-gap: 2px; padding: 5px 10px 7px 16px; }',
+      '.rs-bar[data-expanded="true"] .rs-bar__top { grid-area: top; }',
+      '.rs-bar[data-expanded="true"] .rs-bar__actions { grid-area: actions; }',
+      '.rs-bar[data-expanded="true"] .rs-bar__body { grid-area: body; }',
+      '.rs-bar__top { flex: none; display: inline-flex; align-items: center; min-width: 0; }',
+      '.rs-bar__lead { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }',
+      '.rs-bar__pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }',
+      '.rs-bar[data-active="true"] .rs-bar__pulse { background: var(--dsw-alias-state-business-primary); animation: rs-breathe 1.6s ease-in-out infinite; }',
+      '@media (prefers-reduced-motion: reduce) { .rs-bar[data-active="true"] .rs-bar__pulse { animation: none; } }',
+      '.rs-bar__label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }',
+      '.rs-bar__count { flex: none; font-size: 11px; line-height: 16px; font-weight: 600; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }',
+      '.rs-bar__body { flex: 1 1 auto; min-width: 0; }',
+      '.rs-bar__list { display: flex; align-items: center; gap: 5px; overflow-x: auto; overflow-y: hidden; padding: 3px 3px; scrollbar-width: thin; }',
+      '.rs-bar__list::-webkit-scrollbar { height: 6px; }',
+      '.rs-bar__list::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l1); border-radius: 3px; }',
+      '.rs-bar__chip { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 22px; margin: 0; padding: 0 8px; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; background: transparent; color: var(--dsw-alias-label-primary); font-family: inherit; font-size: 12px; line-height: 20px; text-align: left; cursor: pointer; }',
+      '.rs-bar__chip:hover { background: var(--dsw-alias-interactive-bg-hover); }',
+      '.rs-bar__chip[data-current="true"] { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-active); }',
+      '.rs-bar__chip:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }',
+      '.rs-bar__title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
+      '.rs-bar__rows { display: flex; flex-direction: column; gap: 2px; max-height: min(40vh, 260px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 3px; scrollbar-width: thin; }',
+      '.rs-bar__rows::-webkit-scrollbar { width: 8px; }',
+      '.rs-bar__rows::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l1); border-radius: 4px; }',
+      '.rs-bar__row { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; padding: 4px 6px; border: none; border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-primary); font-family: inherit; text-align: left; cursor: pointer; }',
+      '.rs-bar__row:hover { background: var(--dsw-alias-interactive-bg-hover); }',
+      '.rs-bar__row[data-current="true"] { background: var(--dsw-alias-interactive-bg-active); }',
+      '.rs-bar__row:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
+      '.rs-bar__rowbody { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }',
+      '.rs-bar__rowtitle { font-size: 12px; line-height: 17px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
+      '.rs-bar__rowmeta { font-size: 11px; line-height: 15px; color: var(--dsw-alias-label-tertiary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
+      '.rs-bar__actions { flex: none; display: inline-flex; align-items: center; gap: 2px; }',
+      '.rs-bar__toggle { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: var(--dsw-radius-xs, 4px); background: transparent; color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 11px; line-height: 24px; cursor: pointer; }',
+      '.rs-bar__toggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
+      '.rs-bar__toggle:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
+      '.rs-bar__toggle svg { flex: none; }',
+      '.rs-bar__hide { margin-left: 2px; }',
     ].join('\n');
 
     /* ---------------------------------------------------------------- geometry */
@@ -1158,6 +1331,11 @@ window.__ModuleLoader__.load({
         hydrated: false,
         mode: DEFAULTS.subagentMode,
         maxAgeDays: DEFAULTS.maxAgeDays,
+        // Seeded synchronously: an enabled bar must not appear a frame late
+        // and reflow the columns once per launch.
+        bar: readStoredBar() === true,
+        barTouched: false,
+        barExpanded: false,
         config: DEFAULTS,
         canPersist: false,
         saving: false,
@@ -1259,6 +1437,27 @@ window.__ModuleLoader__.load({
         }
       }
 
+      function readStoredBar() {
+        try {
+          const raw = window.localStorage.getItem(BAR_KEY);
+          // An absent key is not the same as "off": only an explicit stored
+          // value may override the configured default.
+          if (raw === 'on') return true;
+          if (raw === 'off') return false;
+          return undefined;
+        } catch (error) {
+          return undefined;
+        }
+      }
+
+      function writeStoredBar(on) {
+        try {
+          window.localStorage.setItem(BAR_KEY, on ? 'on' : 'off');
+        } catch (error) {
+          /* private mode: the switch still applies for this page */
+        }
+      }
+
       /** Send one preference to the Host, which persists it into the profile patch. */
       function persist(patch) {
         panel.update(current => ({ ...current, saving: true, persistError: '' }));
@@ -1302,6 +1501,35 @@ window.__ModuleLoader__.load({
         persist({ maxAgeDays: days });
       }
 
+      function setBar(on) {
+        const next = on === true;
+        if (panel.getSnapshot().bar === next) return;
+        writeStoredBar(next);
+        panel.update(current => ({ ...current, bar: next, barTouched: true, barExpanded: false }));
+        persist({ activityBar: next });
+      }
+
+      /** The bar's own pull-up list: page-local, never written to the profile. */
+      function setBarExpanded(value) {
+        const next = value === true;
+        if (panel.getSnapshot().barExpanded === next) return;
+        panel.update(current => ({ ...current, barExpanded: next }));
+      }
+
+      /**
+       * Dismiss the strip for this device only: the sheet switch owns the saved
+       * preference, so one dismissal cannot outrank a later `activityBar: true`
+       * in the profile. Focus goes back to the entry row, which stays mounted.
+       */
+      function dismissBar() {
+        writeStoredBar(false);
+        panel.update(current => (current.bar
+          ? { ...current, bar: false, barTouched: true, barExpanded: false }
+          : current));
+        const anchor = panel.getSnapshot().anchor;
+        if (anchor && typeof anchor.focus === 'function') anchor.focus({ preventScroll: true });
+      }
+
       /* ---- shared actions ---------------------------------------------- */
 
       function openSession(id) {
@@ -1329,6 +1557,17 @@ window.__ModuleLoader__.load({
        */
       function pickRow(row) {
         if (!openSession(row.id)) return;
+        if (panel.getSnapshot().config.closeOnPick !== false) closePanel();
+        revealInSidebar(row.id, row.workspace);
+      }
+
+      /**
+       * Act on a bar chip: open the session and locate it in the sidebar. The
+       * sheet follows `closeOnPick` like a row pick; the bar itself stays.
+       */
+      function pickBar(row) {
+        if (!openSession(row.id)) return;
+        if (panel.getSnapshot().barExpanded) setBarExpanded(false);
         if (panel.getSnapshot().config.closeOnPick !== false) closePanel();
         revealInSidebar(row.id, row.workspace);
       }
@@ -1363,7 +1602,8 @@ window.__ModuleLoader__.load({
         const localeSnapshot = fallbacks.locale(identity);
         const localeId = localeIdOf(localeSnapshot) || activeLocaleId();
         const countOnly = options !== undefined && options.countOnly === true;
-        const query = countOnly ? '' : state.query;
+        const ongoingOnly = options !== undefined && options.ongoingOnly === true;
+        const query = countOnly || ongoingOnly ? '' : state.query;
         return useMemo(() => buildView({
           list,
           statuses,
@@ -1378,9 +1618,11 @@ window.__ModuleLoader__.load({
           t,
           localeId,
           countOnly,
+          ongoingOnly,
         }), [
           list, workspaceState, statuses, state.mode, state.expanded, state.now,
           state.config.maxItems, state.maxAgeDays, state.config.showWorkspace, localeId, countOnly, query,
+          ongoingOnly,
         ]);
       }
 
@@ -1431,6 +1673,158 @@ window.__ModuleLoader__.load({
               h('span', { className: 'rs-sr' }, signalText),
             ),
           h('span', { className: 'rs-entry__chevron', 'aria-hidden': 'true' }, icon('chevronDown', 14)),
+        );
+      }
+
+      /* ---- activity bar ------------------------------------------------ */
+
+      /**
+       * The `shell.bottom` strip: the sessions that are working right now —
+       * running, or waiting on the user — always on screen below every column.
+       *
+       * It keeps its height once enabled, even with nothing in flight: a strip
+       * that appears and disappears would resize all three columns mid-task.
+       * The slot entry itself only exists while the preference is on (see the
+       * registration below), so neither space nor the single seat is taken
+       * otherwise. The list ignores the sheet's Range window, row cap and
+       * search (see `buildView`), so a long run cannot be hidden by them.
+       */
+      function ActivityBar(props) {
+        const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot, panel.getSnapshot);
+        const view = useView(props, state, { ongoingOnly: true });
+        if (!state.bar) return null;
+        const rows = view.rows;
+        const active = rows.length > 0;
+        // A pull-up list is only offered when there is a real choice to make,
+        // and it collapses with the bar itself.
+        const expanded = active && state.barExpanded === true;
+        const listId = BAR_ID + '-list';
+        // The dot colours carry the state; the strip only spends width on the
+        // session titles. What the count is made of stays available as a
+        // tooltip and in the visually hidden live text, so nothing is lost.
+        const segments = [];
+        if (view.waiting > 0) segments.push(t('bar.seg.waiting', { count: view.waiting }));
+        if (view.done > 0) segments.push(t('bar.seg.done', { count: view.done }));
+        if (view.running > 0) segments.push(t('bar.seg.running', { count: view.running }));
+        const breakdown = segments.join(' · ');
+        const describe = row => [
+          row.title,
+          row.subagent ? t('row.subagent') : '',
+          row.stateLabel,
+          row.workspace,
+        ].filter(part => typeof part === 'string' && part !== '').join(' · ');
+        const toggleLabel = t(expanded ? 'bar.collapse' : 'bar.expand');
+        return h(
+          'div',
+          {
+            id: BAR_ID,
+            className: 'rs-bar',
+            role: 'region',
+            'aria-label': t('bar.region'),
+            'data-active': active ? 'true' : 'false',
+            'data-expanded': expanded ? 'true' : 'false',
+          },
+          h(
+            'span',
+            { className: 'rs-bar__top', title: active ? breakdown : undefined },
+            h(
+              'span',
+              { className: 'rs-bar__lead' },
+              h('span', { className: 'rs-bar__pulse', 'aria-hidden': 'true' }),
+              active
+                ? h('span', { className: 'rs-bar__count', 'aria-hidden': 'true' }, String(rows.length))
+                : h('span', { className: 'rs-bar__label' }, t('bar.empty')),
+              active
+                ? h('span', { className: 'rs-sr', role: 'status', 'aria-live': 'polite' }, breakdown)
+                : null,
+            ),
+          ),
+          expanded
+            ? h(
+              'div',
+              { className: 'rs-bar__body rs-bar__rows', id: listId, role: 'group', 'aria-label': t('bar.list') },
+              rows.map((row) => {
+                const label = describe(row);
+                return h(
+                  'button',
+                  {
+                    key: row.id,
+                    type: 'button',
+                    className: 'rs-bar__row',
+                    'data-current': row.current ? 'true' : 'false',
+                    'aria-current': row.current ? 'true' : undefined,
+                    title: label,
+                    'aria-label': label,
+                    onClick: () => pickBar(row),
+                  },
+                  h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+                  h(
+                    'span',
+                    { className: 'rs-bar__rowbody' },
+                    h('span', { className: 'rs-bar__rowtitle' }, row.title),
+                    h(
+                      'span',
+                      { className: 'rs-bar__rowmeta' },
+                      [row.subagent ? t('row.subagent') : '', row.workspace]
+                        .filter(part => typeof part === 'string' && part !== '').join(' · '),
+                    ),
+                  ),
+                );
+              }),
+            )
+            : h(
+              'div',
+              { className: 'rs-bar__body rs-bar__list', id: listId, role: 'group', 'aria-label': t('bar.list') },
+              rows.map((row) => {
+                const label = describe(row);
+                return h(
+                  'button',
+                  {
+                    key: row.id,
+                    type: 'button',
+                    className: 'rs-bar__chip',
+                    'data-current': row.current ? 'true' : 'false',
+                    'aria-current': row.current ? 'true' : undefined,
+                    title: label,
+                    'aria-label': label,
+                    onClick: () => pickBar(row),
+                  },
+                  h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+                  h('span', { className: 'rs-bar__title' }, row.title),
+                );
+              }),
+            ),
+          h(
+            'span',
+            { className: 'rs-bar__actions' },
+            active && rows.length > 1
+              ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'rs-bar__toggle',
+                  'aria-expanded': expanded ? 'true' : 'false',
+                  'aria-controls': listId,
+                  title: t(expanded ? 'bar.collapse.hint' : 'bar.expand.hint'),
+                  'aria-label': toggleLabel,
+                  onClick: () => setBarExpanded(!expanded),
+                },
+                icon(expanded ? 'chevronDown' : 'chevronUp', 13),
+                h('span', { className: 'rs-bar__togglelabel' }, toggleLabel),
+              )
+              : null,
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'rs-iconbtn rs-bar__hide',
+                'aria-label': t('bar.hide'),
+                title: t('bar.hide'),
+                onClick: () => dismissBar(),
+              },
+              icon('close', 14),
+            ),
+          ),
         );
       }
 
@@ -1497,7 +1891,7 @@ window.__ModuleLoader__.load({
             window.removeEventListener('scroll', schedule, true);
             if (observer) observer.disconnect();
           };
-        }, [state.anchor, state.config.panelOverhang]);
+        }, [state.anchor, state.config.panelOverhang, state.bar, state.barExpanded]);
 
         // Relative time ages while the sheet stays open.
         useEffect(() => {
@@ -1525,6 +1919,8 @@ window.__ModuleLoader__.load({
             // Menus and toasts are portalled outside the sheet; a click there is
             // a click on one of our own actions, not a click away.
             if (isElement(target) && target.closest('[role="menu"], [data-context-menu], [data-context-menu-trigger]') !== null) return;
+            // The live bar is a sibling surface of the sheet, not a click away.
+            if (isElement(target) && target.closest('#' + BAR_ID) !== null) return;
             closePanel();
           };
           const focusPanel = () => {
@@ -1747,6 +2143,7 @@ window.__ModuleLoader__.load({
           renderSearch(state, searchRef),
           renderModes(state, focusSearch),
           renderRange(state, focusSearch),
+          renderBar(state, focusSearch),
           searching && rows.length > 0 ? h('div', { className: 'rs-searchhint' }, t('search.scope')) : null,
           state.persistError || (state.hydrated && !state.canPersist)
             ? h(
@@ -1906,6 +2303,35 @@ window.__ModuleLoader__.load({
         );
       }
 
+      /** The `进行中栏` switch: keep a live strip of working sessions at the bottom. */
+      function renderBar(state, focusSearch) {
+        return h(
+          'div',
+          { className: 'rs-modes' },
+          h('span', { className: 'rs-modes__label' }, t('bar.switch')),
+          h(
+            'div',
+            { className: 'rs-seg', role: 'group', 'aria-label': t('bar.switch') },
+            [false, true].map(on => h(
+              'button',
+              {
+                key: on ? 'on' : 'off',
+                type: 'button',
+                className: 'rs-seg__btn',
+                'data-active': state.bar === on ? 'true' : 'false',
+                'aria-pressed': state.bar === on ? 'true' : 'false',
+                title: t(on ? 'bar.on.hint' : 'bar.off.hint'),
+                onClick: (event) => {
+                  setBar(on);
+                  if (event.detail > 0) focusSearch();
+                },
+              },
+              t(on ? 'bar.on' : 'bar.off'),
+            )),
+          ),
+        );
+      }
+
       /** One row: twisty (parents only) + the row button + the actions menu. */
       function renderRow(row, terms, index, activeIndex) {
         const menus = ctx.get('contextMenus', false);
@@ -2008,6 +2434,7 @@ window.__ModuleLoader__.load({
         let cancelled = false;
         const stored = readStoredMode();
         const storedRange = readStoredRange();
+        const storedBar = readStoredBar();
         fetch(CONFIG_URL, { headers: { accept: 'application/json' }, cache: 'no-store' })
           .then(response => (response.ok ? response.json() : null))
           .then((payload) => {
@@ -2020,10 +2447,12 @@ window.__ModuleLoader__.load({
               closeOnPick: typeof payload.closeOnPick === 'boolean' ? payload.closeOnPick : DEFAULTS.closeOnPick,
               showWorkspace: typeof payload.showWorkspace === 'boolean' ? payload.showWorkspace : DEFAULTS.showWorkspace,
               defaultCollapsed: typeof payload.defaultCollapsed === 'boolean' ? payload.defaultCollapsed : DEFAULTS.defaultCollapsed,
+              activityBar: typeof payload.activityBar === 'boolean' ? payload.activityBar : DEFAULTS.activityBar,
               refreshMs: typeof payload.refreshMs === 'number' ? payload.refreshMs : DEFAULTS.refreshMs,
             };
             const mode = stored !== undefined ? stored : config.subagentMode;
             const maxAgeDays = storedRange !== undefined ? storedRange : config.maxAgeDays;
+            const bar = storedBar !== undefined ? storedBar : config.activityBar;
             panel.update((state) => {
               if (state.hydrated) return state;
               return {
@@ -2032,6 +2461,7 @@ window.__ModuleLoader__.load({
                 config,
                 mode,
                 maxAgeDays,
+                bar: state.barTouched ? state.bar : bar,
                 canPersist: payload.canPersist === true,
                 open: config.defaultCollapsed === false ? true : state.open,
               };
@@ -2041,7 +2471,10 @@ window.__ModuleLoader__.load({
             if (cancelled) return;
             const mode = stored !== undefined ? stored : DEFAULTS.subagentMode;
             const maxAgeDays = storedRange !== undefined ? storedRange : DEFAULTS.maxAgeDays;
-            panel.update(state => (state.hydrated ? state : { ...state, hydrated: true, mode, maxAgeDays }));
+            const bar = storedBar !== undefined ? storedBar : DEFAULTS.activityBar;
+            panel.update(state => (state.hydrated
+              ? state
+              : { ...state, hydrated: true, mode, maxAgeDays, bar: state.barTouched ? state.bar : bar }));
           });
         return function disposeConfig() { cancelled = true; };
       }, 'recent-sessions: config');
@@ -2060,6 +2493,46 @@ window.__ModuleLoader__.load({
           id: 'recent-sessions.panel',
           order: 55,
         }, Panel);
+      });
+
+      // The bottom strip is a `single` seat the frame reserves below all three
+      // columns and leaves empty: its height reduces the columns, so the bar
+      // never covers anything. A single seat takes no `id` or `order` (the
+      // catalog lists no registration options), so name only.
+      //
+      // The entry exists only while the preference is on. A single seat renders
+      // one occupant and a second registration shadows the first without
+      // throwing, so a permanently registered (but invisible) entry could blank
+      // another plugin's bottom bar; the switch must own the claim, not just
+      // the paint.
+      ctx.slots.inject('shell.bottom', function () {
+        let disposeEntry = null;
+        const sync = (state) => {
+          const wanted = state.bar === true;
+          if (wanted === (disposeEntry !== null)) return;
+          if (!wanted) {
+            disposeEntry();
+            disposeEntry = null;
+            return;
+          }
+          try {
+            disposeEntry = ctx.slots.register({ name: 'shell.bottom' }, ActivityBar);
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            ctx.logger?.warn?.(`[dsh-recent-sessions] bottom live bar unavailable: ${reason}`);
+            // Keep the seat for this page rather than retrying on every tick.
+            disposeEntry = function noLiveBar() {};
+          }
+        };
+        sync(panel.getSnapshot());
+        const unsubscribe = panel.subscribe(() => sync(panel.getSnapshot()));
+        return function disposeLiveBar() {
+          unsubscribe();
+          if (disposeEntry !== null) {
+            disposeEntry();
+            disposeEntry = null;
+          }
+        };
       });
     }
 

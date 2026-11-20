@@ -1,1 +1,1 @@
-![The recent sessions sheet floats over the sidebar list with a search field, subagent and range switches, and one main session folding three subagent sessions under it](preview.svg)
+![The recent sessions sheet floats over the sidebar list with a search field and subagent, range and live-bar switches, one main session folding three subagent sessions under it, and a live bar at the bottom of the window listing the sessions in progress](preview.svg)
