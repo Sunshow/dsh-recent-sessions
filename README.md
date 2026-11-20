@@ -19,7 +19,7 @@ Install from the Harness **Plugins** page → **Add plugin**:
 github:Sunshow/dsh-recent-sessions
 
 # or pin a version
-github:Sunshow/dsh-recent-sessions#v0.4.0
+github:Sunshow/dsh-recent-sessions#v0.5.0
 ```
 
 Then open the switch for `dsh-recent-sessions` in the installed list. The repository ships the plugin files as-is; nothing needs building.
@@ -71,6 +71,7 @@ The third switch in the sheet (`进行中栏` / **Live bar**) keeps a strip at t
 - **Independent of the sheet's filters**: the bar ignores the Range window (a three-day run is still running), `maxItems` and search, so nothing can silently hide a session you should see. Archived and blank sessions stay out, exactly as in the sheet.
 - **Stable height**: once enabled, the strip keeps its height even with nothing to show and says `暂无进行中或未读的会话`. A bar that appeared and disappeared would resize every column mid-task. While the preference is off, the seat is not claimed at all — it renders nothing and reserves no space.
 - **One click to switch**: a chip opens that session and scrolls the sidebar to its workspace, same as a sheet row (the sheet follows `closeOnPick`); hover shows title, state and workspace for the full label.
+- **Right-click for actions**: right-clicking a chip — or a row in the pull-up list — opens the same Session menu as the sheet's `⋯`: pin, rename, fork, archive, copy Session ID. The menu lands at the pointer (a keyboard context-menu key uses the chip's own box), so a running session can be pinned without leaving the strip. Hovering a chip says so in its tooltip.
 - **Turning it on and off**: the sheet switch (`关闭` / `常驻`) is the saved preference — it writes `localStorage` (`dsh.recent-sessions.activity-bar.v1`) and the profile's config through `POST /api/dsh-recent-sessions/config`, so `activityBar: true` makes the bar the default on every window. The `✕` at the right end of the bar only dismisses it on this device: one click cannot outrank a configured default forever.
 
 `shell.bottom` is a `single` seat, claimed only while the bar is on: two plugins asking for it cannot both be shown, and a host without that seat simply hides the bar while the entry row and the sheet keep working.
@@ -131,6 +132,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 - **不受面板筛选影响**：不看「范围」（跑了一周的会话照样在），不受「条数上限」，也不参与搜索，任何设置都不会悄悄藏掉一个你该看到的会话。已归档和空白会话照旧不出现。
 - **高度稳定**：开关打开后，没有可列的会话也会保留一条「暂无进行中或未读的会话」，不会因为会话开始 / 结束让三栏高度忽大忽小；开关关掉时这个席位根本不注册，不渲染、不占高度。
 - **点一下就切**：每一格的开头是状态点（运行中蓝点呼吸、等你确认黄点），点整格切到该会话，并把侧栏滚到它所在的工作区（面板照 `closeOnPick` 收起）；悬停能看到标题、状态和工作区的完整说明。
+- **右键更多**：右键格子（或上拉列表里的行）会打开和面板 `⋯` 同一个会话菜单——置顶、重命名、分叉、归档、复制 Session ID——菜单落在鼠标位置（键盘的菜单键则贴着格子），所以想置顶一个正在跑的会话不用离开这条栏。悬停提示里也写了这一点。
 - **怎么开关**：面板里的开关（`关闭` / `常驻`）是**会保存的偏好**——先存本机（`localStorage` 的 `dsh.recent-sessions.activity-bar.v1`），再写回 profile 配置，所以 `activityBar: true` 会让新窗口默认打开它。栏右侧的 `✕` 只是在本机收起，不会把配置里的默认值改掉，点错了还能从面板开关回来。
 
 它占的是宿主的 `shell.bottom` 席位（`single`），而且只在打开时占：两个插件不能同时显示，宿主没有这个席位时这条栏不出现，入口行和面板照常工作。
@@ -207,7 +209,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 github:Sunshow/dsh-recent-sessions
 
 # 或固定版本
-github:Sunshow/dsh-recent-sessions#v0.4.0
+github:Sunshow/dsh-recent-sessions#v0.5.0
 ```
 
 安装后在已安装列表里打开 `dsh-recent-sessions` 的开关。仓库里提交的就是可直接运行的插件文件，

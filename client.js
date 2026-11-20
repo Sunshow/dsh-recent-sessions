@@ -157,6 +157,7 @@ window.__ModuleLoader__.load({
         'bar.collapse': '收起',
         'bar.collapse.hint': '收起进行中会话列表',
         'bar.list': '进行中与未读会话',
+        'bar.menuHint': '右键更多操作',
         'bar.childRunning': '子代理运行中',
         'bar.childWarning': '子代理待确认',
         'row.menu': '会话操作',
@@ -240,6 +241,7 @@ window.__ModuleLoader__.load({
         'bar.collapse': 'Collapse',
         'bar.collapse.hint': 'Collapse the list of sessions in progress',
         'bar.list': 'Sessions in progress and unread',
+        'bar.menuHint': 'Right-click for actions',
         'bar.childRunning': 'Subagent running',
         'bar.childWarning': 'Subagent needs you',
         'row.menu': 'Session actions',
@@ -1572,14 +1574,51 @@ window.__ModuleLoader__.load({
         revealInSidebar(row.id, row.workspace);
       }
 
-      function openRowMenu(id, title, element) {
+      /**
+       * Open the official Session menu — pin / rename / fork / archive / copy
+       * Session ID — under `element`, or at a pointer position for a right-click.
+       * @returns whether a menu service was there to open.
+       */
+      function openRowMenu(id, title, element, point) {
         const menus = ctx.get('contextMenus', false);
-        if (menus === undefined || typeof menus.open !== 'function') return;
-        const rect = element.getBoundingClientRect();
+        if (menus === undefined || typeof menus.open !== 'function') return false;
+        let x = 0;
+        let y = 0;
+        if (point !== undefined) {
+          x = point.x;
+          y = point.y;
+        } else if (element && typeof element.getBoundingClientRect === 'function') {
+          const rect = element.getBoundingClientRect();
+          x = rect.left;
+          y = rect.bottom + 4;
+        }
         menus.open(
           { kind: 'session', value: { sessionId: id, displayTitle: title } },
-          { x: Math.round(rect.left), y: Math.round(rect.bottom + 4) },
+          { x: Math.round(x), y: Math.round(y) },
         );
+        return true;
+      }
+
+      /**
+       * Right-click a bar chip or row: the same Session menu the sheet's `⋯`
+       * opens, so a running session can be pinned (or renamed, forked or
+       * archived) without leaving the strip. A keyboard context-menu key has no
+       * pointer position, so that case falls back to the trigger's own box.
+       */
+      function barContextMenu(row) {
+        return function handleContextMenu(event) {
+          const menus = ctx.get('contextMenus', false);
+          if (menus === undefined || typeof menus.open !== 'function') return;
+          event.preventDefault();
+          event.stopPropagation();
+          const keyboard = event.clientX === 0 && event.clientY === 0;
+          openRowMenu(
+            row.id,
+            row.menuTitle || row.title,
+            event.currentTarget,
+            keyboard ? undefined : { x: event.clientX, y: event.clientY },
+          );
+        };
       }
 
       /* ---- data -------------------------------------------------------- */
@@ -1753,9 +1792,10 @@ window.__ModuleLoader__.load({
                     className: 'rs-bar__row',
                     'data-current': row.current ? 'true' : 'false',
                     'aria-current': row.current ? 'true' : undefined,
-                    title: label,
+                    title: label + ' · ' + t('bar.menuHint'),
                     'aria-label': label,
                     onClick: () => pickBar(row),
+                    onContextMenu: barContextMenu(row),
                   },
                   h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
                   h(
@@ -1785,9 +1825,10 @@ window.__ModuleLoader__.load({
                     className: 'rs-bar__chip',
                     'data-current': row.current ? 'true' : 'false',
                     'aria-current': row.current ? 'true' : undefined,
-                    title: label,
+                    title: label + ' · ' + t('bar.menuHint'),
                     'aria-label': label,
                     onClick: () => pickBar(row),
+                    onContextMenu: barContextMenu(row),
                   },
                   h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
                   h('span', { className: 'rs-bar__title' }, row.title),
