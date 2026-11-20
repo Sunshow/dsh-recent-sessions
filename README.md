@@ -9,7 +9,7 @@
 
 </div>
 
-> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. A search field at the top filters by session title, workspace name or path, session ID and state; opening the sheet focuses it, and Escape clears it. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen with a switch in the sheet that saves back to the profile. A second switch limits the list to the last 1 / 7 / 30 days. A third switch puts a **live bar** at the bottom of the window: the sessions that are in progress — running, or waiting on you — always on screen, never covering the columns, and clickable. The entry row also carries the list's status dots — yellow for a session waiting on you, green for a finished session not opened yet — and shows both at once, without counts. The sheet spans the sidebar column and paints an opaque surface.
+> **English** — A sidebar plugin for DeepSeek Harness. One extra row above Settings opens a sheet over the workspace list: the latest sessions by last activity, click a row to switch, collapse the sheet and scroll the sidebar to that session's workspace. A search field at the top filters by session title, workspace name or path, session ID and state; opening the sheet focuses it, and Escape clears it. **Subagent sessions are the point**: fold them into their main session (the main row ranks by the newest activity anywhere in its subtree and expands in place), hide them, or list them on their own row — chosen behind the sheet's **settings icon**, which folds the switches away until asked for and saves the choice back to the profile. A second switch there limits the list to the last 1 / 7 / 30 days. A third one puts a **live bar** at the bottom of the window: the sessions that are in progress — running, or waiting on you — always on screen, never covering the columns, and clickable. The entry row also carries the list's status dots — yellow for a session waiting on you, green for a finished session not opened yet — and shows both at once, without counts. The sheet spans the sidebar column and paints an opaque surface.
 
 ## English quick start
 
@@ -19,12 +19,14 @@ Install from the Harness **Plugins** page → **Add plugin**:
 github:Sunshow/dsh-recent-sessions
 
 # or pin a version
-github:Sunshow/dsh-recent-sessions#v0.5.1
+github:Sunshow/dsh-recent-sessions#v0.6.0
 ```
 
 Then open the switch for `dsh-recent-sessions` in the installed list. The repository ships the plugin files as-is; nothing needs building.
 
 Find the entry row above **Settings** in the sidebar: `最近会话 · Recent sessions  <count>`. Click it, pick a session; the sheet closes and the sidebar scrolls to that session's workspace row (expanding the group first when it is collapsed).
+
+The sheet opens as a plain picker: the three switches (subagents, range, live bar) are folded behind the **settings icon** in its title bar and cost the list no height until you click it. While a non-default filter is saved the icon is tinted and carries a small dot, so a shorter list still explains itself; `Esc` folds the settings away before it closes the sheet.
 
 Opening the sheet puts the cursor in its search field, so you can start typing right away. Type to filter, `↑` / `↓` to highlight results (the caret stays in the field), `Enter` to open the highlighted row (or the top match once a query is typed), `Esc` to clear a query and drop focus, then `Esc` again to close the sheet. A printable key pressed anywhere in the sheet also returns focus to the field (Space still activates a focused row or switch).
 
@@ -56,14 +58,14 @@ Both dots appear side by side when both states exist, and no counts are shown. H
 The field under the title is focused the moment you open the sheet, and a printable key pressed anywhere in the sheet brings focus back to it — after arrow-key navigation or after clicking one of the switches you can simply keep typing.
 
 - Matches session titles (including the raw and display titles), workspace names and paths, session IDs, and non-idle state labels in the active language (e.g. `运行中` / `Running`). Several space-separated terms must all match.
-- Search is flat and newest-first. It ignores the fold tree — a matching subagent appears with its subagent tag — and ignores the Range window, so an old or nested session is still found; a note under the switches says so while matching rows are shown. The `hide` subagent mode still leaves subagent sessions out, and the empty state says so when that is the cause.
+- Search is flat and newest-first. It ignores the fold tree — a matching subagent appears with its subagent tag — and ignores the Range window, so an old or nested session is still found; a note under the search field says so while matching rows are shown. The `hide` subagent mode still leaves subagent sessions out, and the empty state says so when that is the cause.
 - `↑` / `↓` move a highlight through the results while the caret stays in the field; `Enter` opens the highlighted row (or the top match once a query is typed); `Esc` with a query clears it and drops focus (`Esc` with no query closes the sheet); and the `✕` button only clears.
 - Matches are highlighted in the title and meta line. A match on text the row does not normally show (workspace path, raw/display title or session ID) is named as an extra meta segment — a session-ID match shows `Session ID` — so every result explains itself. Search also shows the workspace name even when `showWorkspace` is off, for the same reason.
 - The result list is still capped by `maxItems`; the header then reads `N matches · showing M`. Only sessions the client has loaded are searched; archived sessions stay in the sidebar's archive.
 
 ## Live bar
 
-The third switch in the sheet (`进行中栏` / **Live bar**) keeps a strip at the bottom of the window listing the sessions that need your eyes: **running**, **waiting** on you, and **finished but not opened yet**. The strip fills the frame's `shell.bottom` seat — a slot the harness reserves below all three columns and sizes from its content — so the bar reduces the columns' height instead of covering them: the workspace list, the conversation and the sidebar all stay usable and visible.
+The third switch behind the sheet's settings icon (`进行中栏` / **Live bar**) keeps a strip at the bottom of the window listing the sessions that need your eyes: **running**, **waiting** on you, and **finished but not opened yet**. The strip fills the frame's `shell.bottom` seat — a slot the harness reserves below all three columns and sizes from its content — so the bar reduces the columns' height instead of covering them: the workspace list, the conversation and the sidebar all stay usable and visible.
 
 - **What shows up**: a session whose turn is running; one waiting for approval, a plan review or an answer; and one that finished with no one having opened it yet — opening it clears the chip. **The dot carries the state and the chip carries only the title** (blue running, yellow waiting, green finished-unread); hovering a chip, or a screen reader, spells out the state, the subagent marker and the workspace, and the strip stays 28 px tall. In `fold` mode a main session whose subagent is working is listed too — blue for that work, or yellow when the subagent is the one waiting — and ranked by the newest activity in its subtree; `hide` keeps the subagent row out but still reports its work and its pending question on the main row; `separate` gives every subagent its own chip, unread ones included. A folded subagent's unread flag deliberately does not bubble into its main row: opening the main session does not clear it, so it would glow forever — the same call the sidebar's status dots make.
 - **Pinned sessions stay**: a session pinned in the sidebar (`置顶`) is kept on the strip whatever its state — idle included — in the sidebar's pin order at the front, marked with a pin glyph, until you unpin it (right-click → `取消置顶`). Unpinning removes it again unless it is running, waiting or unread. Archived pinned sessions have no row.
@@ -73,11 +75,11 @@ The third switch in the sheet (`进行中栏` / **Live bar**) keeps a strip at t
 - **Stable height**: once enabled, the strip keeps its height even with nothing to show and says `暂无进行中或未读的会话`. A bar that appeared and disappeared would resize every column mid-task. While the preference is off, the seat is not claimed at all — it renders nothing and reserves no space.
 - **One click to switch**: a chip opens that session and scrolls the sidebar to its workspace, same as a sheet row (the sheet follows `closeOnPick`); hover shows title, state and workspace for the full label.
 - **Right-click for actions**: right-clicking a chip — or a row in the pull-up list — opens the same Session menu as the sheet's `⋯`: pin, rename, fork, archive, copy Session ID. The menu lands at the pointer (a keyboard context-menu key uses the chip's own box), so a running session can be pinned without leaving the strip. Hovering a chip says so in its tooltip.
-- **Turning it on and off**: the sheet switch (`关闭` / `常驻`) is the saved preference — it writes `localStorage` (`dsh.recent-sessions.activity-bar.v1`) and the profile's config through `POST /api/dsh-recent-sessions/config`, so `activityBar: true` makes the bar the default on every window. The `✕` at the right end of the bar only dismisses it on this device: one click cannot outrank a configured default forever.
+- **Turning it on and off**: the settings switch (`关闭` / `常驻`) is the saved preference — it writes `localStorage` (`dsh.recent-sessions.activity-bar.v1`) and the profile's config through `POST /api/dsh-recent-sessions/config`, so `activityBar: true` makes the bar the default on every window. The `✕` at the right end of the bar only dismisses it on this device: one click cannot outrank a configured default forever.
 
 `shell.bottom` is a `single` seat, claimed only while the bar is on: two plugins asking for it cannot both be shown, and a host without that seat simply hides the bar while the entry row and the sheet keep working.
 
-Subagent handling (the switch at the top of the sheet, saved through `POST /api/dsh-recent-sessions/config` into the profile's `cordis.patch.yml`):
+Subagent handling (the first switch behind the sheet's settings icon, saved through `POST /api/dsh-recent-sessions/config` into the profile's `cordis.patch.yml`):
 
 | Mode | What the list shows | Ranking |
 | --- | --- | --- |
@@ -96,20 +98,22 @@ Limitations: archived sessions are not listed (they stay in the sidebar's archiv
 DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多一行「最近会话」，
 点开是一张浮在工作区列表上方的面板：按最后活动时间列出最近的会话，点一行直接切过去。
 面板顶部的搜索框按会话标题、工作区名称 / 路径、Session ID 和状态过滤；点开浮层时它自动取得焦点，`Esc` 清空并脱离焦点。
+「子代理」「范围」「进行中栏」三排开关收在标题栏右侧的设置图标（滑块）里，默认收起，把高度留给列表。
 入口行还会带上状态点：有待确认的会话亮黄点、已完成未打开的会话亮绿点，两种可以同时出现。
-再打开「进行中栏」，窗口底部会多一条常驻的会话栏，只列正在跑和等你确认的会话，点一下切过去。
+在设置图标里打开「进行中栏」，窗口底部会多一条常驻的会话栏，只列正在跑和等你确认的会话，点一下切过去。
 
 ## 功能
 
 - **一行入口**：`最近会话 12`，和「设置」同一款式与高度；数字是**列表里实际列出**的条数。侧栏收成细轨道时整行隐藏，不留圆点。
 - **入口带状态点**：面板打开时列出的顶层行中，只要有一个在等待确认（批准 / 计划确认 / 回答），入口行就亮黄点；只要有一个跑完还没打开，就亮绿点。两种同时存在时并排显示，不显示数量；悬停整行会看到当前语言下的说明，读屏也会把它算进入口行的名称。统计范围就是面板的默认列表——受「子代理」「范围」和「条数上限」影响，搜索和展开不改变它，所以亮起的点一定能对应到一个顶层行；折叠在子代理行里的会话不单独亮（子代理跑完通常要打开它才会消掉绿点，并进父行会让入口一直亮着），选择「单独」时它们各自成行、状态照常显示，选择「隐藏」则不列子代理。
 - **直接搜**：浮层打开时搜索框自动取得焦点，打字即过滤；可以搜会话标题、工作区名称 / 路径、Session ID 和状态。焦点不在搜索框时按任意字符也会回到搜索框继续输入（空格仍用于激活当前聚焦的行或开关）。
-- **进行中栏**：面板里的第三个开关。打开后窗口底部常驻一条会话栏，只列**正在跑**和**等你确认**的会话；它占的是宿主的 `shell.bottom` 席位，靠自身高度把三栏挤矮，所以不遮住任何内容。不受「范围」「条数上限」和搜索影响，跑了几天的会话也不会被藏起来；点一下就切过去并定位侧栏；没有进行中的会话时保留一条「暂无进行中的会话」，不会忽隐忽现地挤动布局。
+- **设置收起**：`子代理`、`范围`、`进行中栏` 三排开关默认折叠在标题栏右侧的设置图标（滑块）里，点一下才展开，面板打开时列表一直占满高度；有非默认筛选生效时设置图标上带一个小圆点，收起状态也能看出列表为什么短了。`Esc` 先收起设置，再按一次才收起面板。
+- **进行中栏**：设置图标里的第三个开关。打开后窗口底部常驻一条会话栏，只列**正在跑**和**等你确认**的会话；它占的是宿主的 `shell.bottom` 席位，靠自身高度把三栏挤矮，所以不遮住任何内容。不受「范围」「条数上限」和搜索影响，跑了几天的会话也不会被藏起来；点一下就切过去并定位侧栏；没有进行中的会话时保留一条「暂无进行中的会话」，不会忽隐忽现地挤动布局。
 - **占满侧栏**：面板宽度取自**侧栏列**（不是入口行本身，所以底部同排有别的插件时也照样占满），浮在入口上方。面板用不透明的浮起底色，不会透出后面的工作区列表。想让面板再往右多伸一点（压到对话区），把 `panelOverhang` 设成 40、80 这样的像素值即可。
 - **点一行切过去，并定位到侧栏**：走官方导航（`uiWorkspace.openSession`）；随后面板收起，侧栏自动滚到该会话所在的工作区分组，必要时先展开被折叠的分组，当前会话整行高亮。不想让它自动收起就把 `closeOnPick` 设成 `false`。
 - **每行带状态**：运行中（蓝色呼吸点）、等待批准 / 计划确认 / 回答（黄点）、跑完未打开（绿点）。
 - **会话菜单**：悬停出现 `⋯`，打开官方会话菜单（置顶、重命名、分叉、归档、复制 Session ID），与侧栏工作区行同一套动作。
-- **键盘可用**：打字即搜索；`↑` / `↓` 在结果间移动高亮（光标留在搜索框），回车打开高亮项（有搜索词时可直接打开第一条）；`Tab` 可把焦点移到开关或结果行，在结果行上 `Home` / `End` 到头尾；有搜索时 `Esc` 先清空并脱离焦点，再按一次才收起面板，没有搜索时按 `Esc` 直接收起。
+- **键盘可用**：打字即搜索；`↑` / `↓` 在结果间移动高亮（光标留在搜索框），回车打开高亮项（有搜索词时可直接打开第一条）；`Tab` 可把焦点移到开关或结果行，在结果行上 `Home` / `End` 到头尾；有搜索时 `Esc` 先清空并脱离焦点，再按一次才收起面板，没有搜索时按 `Esc` 直接收起；设置展开时，`Esc` 先收起设置。
 - **不挡路**：面板不拦截背后的界面，点到面板外侧即收起。
 - **侧栏定位**：侧栏用的是宿主自己的行标记（`data-row-key`），展开分组是点宿主的工作区分组头；宿主改结构时这部分退化为「不定位」，会话照常打开。
 
@@ -118,14 +122,14 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 搜索框在面板标题下方，点开浮层就取得焦点，直接打字即可；焦点不在搜索框时（比如刚用方向键选过行、点过开关），按任意可打印字符也会回到搜索框继续输入。
 
 - 匹配范围：会话标题（含原始标题与 displayTitle）、工作区名称与路径、Session ID、以及当前语言下非空闲的状态文案（运行中 / Running 等）。空格分隔多个词时，必须全部命中。
-- 搜索是平铺的、按会话自己的最后活动倒序：不沿子代理折叠树，也不受「范围」限制——有结果时开关下方会提示这一点，很旧或折叠在里面的会话照样能搜到；「隐藏」档仍然不列子代理，若因此没有结果，空状态里会说明。
+- 搜索是平铺的、按会话自己的最后活动倒序：不沿子代理折叠树，也不受「范围」限制——有结果时搜索框下方会提示这一点，很旧或折叠在里面的会话照样能搜到；「隐藏」档仍然不列子代理，若因此没有结果，空状态里会说明。
 - `↑` / `↓` 在结果间移动高亮，光标一直留在搜索框；回车打开高亮项（没有高亮且有搜索词时打开第一条）；有搜索时 `Esc` 清空并脱离焦点（再按一次收起面板），没有搜索时直接收起；右侧 `✕` 只清空。
 - 标题和副标题里的命中会高亮。若命中的是行上原本不显示的内容（工作区路径、原始 / displayTitle、Session ID），会在副标题末尾补一段原因——Session ID 命中显示「会话 ID」——让每条结果都说得清为什么被搜到。搜索时即使 `showWorkspace` 关掉也会显示工作区名，原因同上。
 - 结果仍受「条数上限」截断，标题栏会显示「找到 N 个 · 显示 M」；只搜客户端已经加载的会话，已归档会话不在其中。
 
 ## 进行中栏（一直盯着跑着的会话）
 
-面板里的第三个开关是「进行中栏」。打开后，窗口底部出现一条常驻的会话栏，列**需要你留意的会话**：在跑的、等你的，以及**跑完还没打开的**。
+设置图标里的第三个开关是「进行中栏」。打开后，窗口底部出现一条常驻的会话栏，列**需要你留意的会话**：在跑的、等你的，以及**跑完还没打开的**。
 
 - **哪些会进来**：正在跑 turn 的；等你批准 / 确认计划 / 回答的；以及已完成但还没打开的（打开那个会话，它就从栏上消失）。**状态只用圆点表示，格子上只写标题**（蓝=在跑、黄=等你、绿=跑完未读）；悬停或读屏才会补出状态、子代理标记和工作区，整条栏高 28px，不拿宽度去写状态词。折叠档里，主会话的子代理在跑也算（蓝点），子代理在等你确认时同样会浮上来（黄点）；这两类都按整棵子树的最新活动排序。隐藏档不列子代理行，但主会话仍会替它显示在跑或在等。单独档让子代理各占一格，已完成未读的也列。折叠进主会话的子代理即使已完成未读也**不会**冒上来——打开主会话并不会消掉它的未读标记，会一直亮着；侧栏的状态点也是这个口径。
 - **置顶的会话不会消失**：在侧栏「置顶」过的会话会一直留在栏上——空闲也留——按置顶顺序排在最前，标题前带一个图钉标记；只有你取消置顶（右键 → 取消置顶）才会走。取消后如果它既不在跑、也不在等、也不是未读，就自然消失；已归档的置顶会话不占行。
@@ -135,14 +139,14 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 - **高度稳定**：开关打开后，没有可列的会话也会保留一条「暂无进行中或未读的会话」，不会因为会话开始 / 结束让三栏高度忽大忽小；开关关掉时这个席位根本不注册，不渲染、不占高度。
 - **点一下就切**：每一格的开头是状态点（运行中蓝点呼吸、等你确认黄点），点整格切到该会话，并把侧栏滚到它所在的工作区（面板照 `closeOnPick` 收起）；悬停能看到标题、状态和工作区的完整说明。
 - **右键更多**：右键格子（或上拉列表里的行）会打开和面板 `⋯` 同一个会话菜单——置顶、重命名、分叉、归档、复制 Session ID——菜单落在鼠标位置（键盘的菜单键则贴着格子），所以想置顶一个正在跑的会话不用离开这条栏。悬停提示里也写了这一点。
-- **怎么开关**：面板里的开关（`关闭` / `常驻`）是**会保存的偏好**——先存本机（`localStorage` 的 `dsh.recent-sessions.activity-bar.v1`），再写回 profile 配置，所以 `activityBar: true` 会让新窗口默认打开它。栏右侧的 `✕` 只是在本机收起，不会把配置里的默认值改掉，点错了还能从面板开关回来。
+- **怎么开关**：设置图标里的开关（`关闭` / `常驻`）是**会保存的偏好**——先存本机（`localStorage` 的 `dsh.recent-sessions.activity-bar.v1`），再写回 profile 配置，所以 `activityBar: true` 会让新窗口默认打开它。栏右侧的 `✕` 只是在本机收起，不会把配置里的默认值改掉，点错了还能从设置里的开关回来。
 
 它占的是宿主的 `shell.bottom` 席位（`single`），而且只在打开时占：两个插件不能同时显示，宿主没有这个席位时这条栏不出现，入口行和面板照常工作。
 
 ## 子代理会话怎么处理（本插件的主要设置）
 
 子代理会为每次委派开一个会话，官方侧栏不显示它们；最近会话如果直接平铺，
-列表很快会被 `读取装配入口` 之类的子代理行占满。面板顶部「子代理」有三档：
+列表很快会被 `读取装配入口` 之类的子代理行占满。标题栏设置图标里的「子代理」有三档：
 
 | 档位 | 效果 |
 | --- | --- |
@@ -150,14 +154,14 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 | **隐藏** | 完全不出现子代理会话，主会话只按自己的活动时间排序。 |
 | **单独** | 每个子代理会话各占一行，按它自己的活动时间排序，第二行标注「子代理」。 |
 
-切换方式：面板里点一下即可。选择会做两件事——先存本机（`localStorage`，
+切换方式：点标题栏的设置图标展开设置，再点一下档位即可。选择会做两件事——先存本机（`localStorage`，
 离线也生效），再 `POST /api/dsh-recent-sessions/config` 写回 profile 的
-`cordis.patch.yml`，所以重启后仍然有效。写回不可用时（profile 只读、宿主半没跑起来等），开关下方会显示
+`cordis.patch.yml`，所以重启后仍然有效。写回不可用时（profile 只读、宿主半没跑起来等），展开设置后开关下方会显示
 「未能写入配置，本机生效」，功能照常。
 
 ## 显示多少条、看多近的（「范围」）
 
-面板顶部第二行是「范围」：**不限 / 1 天 / 7 天 / 30 天**。它只按时间窗过滤，
+设置图标里的第二行是「范围」：**不限 / 1 天 / 7 天 / 30 天**。它只按时间窗过滤，
 再按「条数上限」截断，所以列表既能控制"看多久以前的"，也能控制"最多几行"：
 
 - 条数上限在配置里（`maxItems`，默认 12，3–50）。列表只列这么多行，入口行上的数字也就是这个数；
@@ -182,7 +186,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 | `activityBar` | `false` | 是否常驻底部「进行中」栏 |
 | `refreshMs` | `30000` | 相对时间文案的刷新间隔（毫秒） |
 
-面板里的开关优先于这里的默认值（本机偏好）；想回到配置默认值，清掉
+设置里的开关优先于这里的默认值（本机偏好）；想回到配置默认值，清掉
 `localStorage` 里的 `dsh.recent-sessions.subagent-mode.v1`（子代理）、
 `dsh.recent-sessions.max-age-days.v1`（范围）和
 `dsh.recent-sessions.activity-bar.v1`（进行中栏）即可。
@@ -211,7 +215,7 @@ DeepSeek Harness（DSH）侧栏插件。工作区列表下方、设置上方多�
 github:Sunshow/dsh-recent-sessions
 
 # 或固定版本
-github:Sunshow/dsh-recent-sessions#v0.5.1
+github:Sunshow/dsh-recent-sessions#v0.6.0
 ```
 
 安装后在已安装列表里打开 `dsh-recent-sessions` 的开关。仓库里提交的就是可直接运行的插件文件，

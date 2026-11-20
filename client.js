@@ -72,6 +72,8 @@ window.__ModuleLoader__.load({
     const CONFIG_URL = '/api/dsh-recent-sessions/config';
     const MODE_KEY = 'dsh.recent-sessions.subagent-mode.v1';
     const PANEL_ID = 'dsh-recent-sessions-panel';
+    /** The collapsed settings block the header's settings toggle opens. */
+    const SETTINGS_ID = PANEL_ID + '-settings';
     const BAR_ID = 'dsh-recent-sessions-activity-bar';
 
     const MODES = ['fold', 'hide', 'separate'];
@@ -115,6 +117,9 @@ window.__ModuleLoader__.load({
         'panel.label': '最近会话',
         'head.title': '最近会话',
         'head.close': '收起最近会话',
+        'head.settings': '设置',
+        'head.settings.hint': '子代理、范围与进行中栏',
+        'head.settings.filtered': '有筛选生效',
         'head.count': '{count} 个会话',
         'head.countOf': '{shown} / {count} 个会话',
         'head.matches': '找到 {count} 个',
@@ -200,6 +205,9 @@ window.__ModuleLoader__.load({
         'panel.label': 'Recent sessions',
         'head.title': 'Recent sessions',
         'head.close': 'Hide recent sessions',
+        'head.settings': 'Settings',
+        'head.settings.hint': 'Subagents, range and the live bar',
+        'head.settings.filtered': 'Filters applied',
         'head.count': '{count} sessions',
         'head.countOf': '{shown} of {count} sessions',
         'head.matches': '{count} matches',
@@ -317,6 +325,13 @@ window.__ModuleLoader__.load({
         { d: 'm10.6 10.6 2.6 2.6' },
       ],
       close: [{ d: 'M4 4l8 8' }, { d: 'M12 4l-8 8' }],
+      // Three rails with their handles: the settings toggle, folded into the
+      // sheet's header instead of taking a row of its own.
+      sliders: [
+        { d: 'M2.8 4.6h10.4' }, { d: 'M9.9 3.1v3' },
+        { d: 'M2.8 8h10.4' }, { d: 'M6.1 6.5v3' },
+        { d: 'M2.8 11.4h10.4' }, { d: 'M11.1 9.9v3' },
+      ],
       ellipsis: null,
       branch: [
         { d: 'M3.5 4.2v7.6' },
@@ -1025,9 +1040,19 @@ window.__ModuleLoader__.load({
       '.rs-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 9px 6px 3px 12px; }',
       '.rs-head__title { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--dsw-alias-label-primary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
       '.rs-head__count { flex: none; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }',
+      // A non-default filter tints the icon and lights the dot; declared before
+      // the hover rule so hovering still brightens it like every other button.
+      '.rs-head__settings[data-filtered="true"] { color: var(--dsw-alias-state-business-primary); }',
       '.rs-iconbtn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; border-radius: var(--dsw-radius-xs, 4px); background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }',
       '.rs-iconbtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
       '.rs-iconbtn:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
+      // The settings toggle sits where the switches used to be: one 24 px control in the
+      // header, pressed while the settings block is open. The dot marks a saved
+      // filter that is not the default one, so a hidden switch still explains a
+      // shorter list.
+      '.rs-head__settings { position: relative; }',
+      '.rs-head__settings[data-open="true"] { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); }',
+      '.rs-head__dot { position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--dsw-alias-state-business-primary); }',
 
       /* search ----------------------------------------------------------- */
       '.rs-search { flex: none; display: flex; align-items: center; gap: 6px; box-sizing: border-box; height: 30px; margin: 0 12px 8px; padding: 0 5px 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm, 8px); background: var(--dsw-alias-bg-layer-2); }',
@@ -1052,6 +1077,19 @@ window.__ModuleLoader__.load({
       '.rs-seg__btn[data-active="true"] { background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); font-weight: 500; }',
       '.rs-seg__btn:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -1px; }',
       '.rs-hint { flex: none; padding: 0 12px 6px; font-size: 11px; line-height: 16px; color: var(--dsw-alias-state-warn-primary); }',
+
+      /* settings --------------------------------------------------------- */
+      // Closed by default: the sheet is a picker first, and three switch rows
+      // cost the list a third of its height. The settings toggle in the header opens them
+      // for this visit; the labels share one column so the segments line up.
+      '.rs-settings { flex: 0 0 auto; max-height: 40vh; display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; column-gap: 8px; row-gap: 6px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 0 2px; padding: 9px 12px; border-top: 1px solid var(--dsw-alias-border-l2); animation: rs-settings-in 120ms ease-out; }',
+      '@keyframes rs-settings-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }',
+      '@media (prefers-reduced-motion: reduce) { .rs-settings { animation: none; } }',
+      // The rows themselves stay flex rows; inside the settings grid they only
+      // contribute their label and segment, which then share the two columns.
+      '.rs-settings .rs-modes { display: contents; }',
+      '.rs-settings .rs-modes__label { color: var(--dsw-alias-label-secondary); }',
+      '.rs-settings .rs-seg__btn { padding: 0 2px; }',
 
       /* list ------------------------------------------------------------ */
       '.rs-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 8px; }',
@@ -1909,8 +1947,15 @@ window.__ModuleLoader__.load({
         const panelRef = useRef(null);
         const listRef = useRef(null);
         const searchRef = useRef(null);
+        const settingsRef = useRef(null);
+        // Set by a keyboard activation of the toggle, consumed once the block
+        // exists: pointer users keep their focus where they clicked.
+        const focusSettingsRef = useRef(false);
         const [geo, setGeo] = useState(null);
         const [activeIndex, setActiveIndex] = useState(-1);
+        // Per-visit, not persisted: every open starts with the list at full
+        // height, and the toggle shows the switches only while it is pressed.
+        const [settingsOpen, setSettingsOpen] = useState(false);
 
         // Measure the anchor (the entry row) instead of guessing the sidebar's
         // geometry: the sheet then lines up with whatever column width, window
@@ -2022,6 +2067,18 @@ window.__ModuleLoader__.load({
                 focusPanel();
                 return;
               }
+              // Escape folds the settings away before it closes the sheet: the
+              // user dismisses the layer they opened last, not both at once.
+              const settingsElement = panelElement !== null
+                ? panelElement.querySelector('[data-settings="true"]')
+                : null;
+              if (settingsElement !== null) {
+                setSettingsOpen(false);
+                const toggle = panelElement.querySelector('[data-settings-toggle="true"]');
+                if (toggle !== null && typeof toggle.focus === 'function') toggle.focus({ preventScroll: true });
+                else focusPanel();
+                return;
+              }
               closePanel();
               const anchorElement = live.anchor;
               if (anchorElement && typeof anchorElement.focus === 'function') {
@@ -2071,6 +2128,17 @@ window.__ModuleLoader__.load({
           const element = input !== null ? input : panelRef.current;
           if (element && typeof element.focus === 'function') element.focus({ preventScroll: true });
         }, [geo, state.focusSearch]);
+
+        // Keyboard activation of the toggle hands focus to the first switch: Tab
+        // would otherwise walk through the close button and the search field to
+        // reach a control the user just asked for.
+        useLayoutEffect(() => {
+          if (!settingsOpen || !focusSettingsRef.current) return;
+          focusSettingsRef.current = false;
+          const block = settingsRef.current;
+          const first = block !== null ? block.querySelector('button') : null;
+          if (first !== null && typeof first.focus === 'function') first.focus({ preventScroll: true });
+        }, [settingsOpen]);
 
         // Clear a selection when the visible result set or its order changes.
         useLayoutEffect(() => {
@@ -2159,6 +2227,13 @@ window.__ModuleLoader__.load({
           const input = searchRef.current;
           if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
         };
+        // A saved filter that hides rows must stay legible even while the
+        // switches are folded away: the toggle carries a dot, and its label says
+        // that something is filtering the list.
+        const filtersApplied = state.mode !== DEFAULTS.subagentMode || state.maxAgeDays !== DEFAULTS.maxAgeDays;
+        const settingsLabel = filtersApplied
+          ? t('head.settings') + ' · ' + t('head.settings.filtered')
+          : t('head.settings');
         const sheetElement = h(
           'div',
           {
@@ -2192,6 +2267,30 @@ window.__ModuleLoader__.load({
               'button',
               {
                 type: 'button',
+                className: 'rs-iconbtn rs-head__settings',
+                'data-settings-toggle': 'true',
+                'data-open': settingsOpen ? 'true' : 'false',
+                'data-filtered': filtersApplied ? 'true' : 'false',
+                'aria-expanded': settingsOpen ? 'true' : 'false',
+                // Only while the block exists: a dangling IDREF points at nothing.
+                'aria-controls': settingsOpen ? SETTINGS_ID : undefined,
+                'aria-label': settingsLabel,
+                title: (filtersApplied ? t('head.settings.filtered') + ' · ' : '') + t('head.settings.hint'),
+                onClick: (event) => {
+                  const next = !settingsOpen;
+                  focusSettingsRef.current = next && event.detail === 0;
+                  setSettingsOpen(next);
+                },
+              },
+              icon('sliders', 14),
+              filtersApplied && !settingsOpen
+                ? h('span', { className: 'rs-head__dot', 'aria-hidden': 'true' })
+                : null,
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
                 className: 'rs-iconbtn',
                 'aria-label': t('head.close'),
                 title: t('head.close'),
@@ -2205,17 +2304,34 @@ window.__ModuleLoader__.load({
             ),
           ),
           renderSearch(state, searchRef),
-          renderModes(state, focusSearch),
-          renderRange(state, focusSearch),
-          renderBar(state, focusSearch),
-          searching && rows.length > 0 ? h('div', { className: 'rs-searchhint' }, t('search.scope')) : null,
-          state.persistError || (state.hydrated && !state.canPersist)
+          // The three switches live behind the header's settings toggle: the sheet opens as
+          // a picker, and the settings block costs list height only while asked.
+          settingsOpen
+            ? h(
+              'div',
+              {
+                id: SETTINGS_ID,
+                ref: settingsRef,
+                className: 'rs-settings',
+                role: 'group',
+                'aria-label': t('head.settings'),
+                'data-settings': 'true',
+              },
+              renderModes(state, focusSearch),
+              renderRange(state, focusSearch),
+              renderBar(state, focusSearch),
+            )
+            : null,
+          // The warning explains the switches; without them it would point at
+          // nothing, so it rides with the open settings block.
+          settingsOpen && (state.persistError || (state.hydrated && !state.canPersist))
             ? h(
               'div',
               { className: 'rs-hint', role: 'status', title: state.persistError || undefined },
               t('modes.localOnly'),
             )
             : null,
+          searching && rows.length > 0 ? h('div', { className: 'rs-searchhint' }, t('search.scope')) : null,
           rows.length === 0
             ? h(
               'div',
