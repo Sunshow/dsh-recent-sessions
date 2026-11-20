@@ -82,23 +82,25 @@
   <rect x="0" y="306" width="640" height="38" fill="#FFFFFF"/>
   <rect x="0" y="306" width="640" height="1.5" fill="#D7E4F4"/>
   <circle cx="22" cy="325" r="4" fill="#2F7DD1"/>
-  <rect x="32" y="321" width="46" height="8" rx="4" fill="#B9D3F2"/>
-  <rect x="84" y="322" width="18" height="6" rx="3" fill="#DCE8F6"/>
+  <!-- the count is the list's trigger: number in a hover-less pill, caret beside it -->
+  <rect x="32" y="318" width="26" height="14" rx="5" fill="#EAF2FD"/>
+  <rect x="38" y="322" width="7" height="6" rx="3" fill="#8FB7E4"/>
+  <path d="m50 323 3 3 3-3" stroke="#8FB7E4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <rect x="116" y="315" width="150" height="20" rx="10" fill="#EAF2FD" stroke="#D7E4F4" stroke-width="1.5"/>
-  <circle cx="128" cy="325" r="3.6" fill="#2F7DD1"/>
-  <rect x="138" y="321" width="82" height="7" rx="3.5" fill="#8FB7E4"/>
-  <rect x="226" y="322" width="26" height="6" rx="3" fill="#C3D6EC"/>
+  <rect x="94" y="315" width="150" height="20" rx="10" fill="#EAF2FD" stroke="#D7E4F4" stroke-width="1.5"/>
+  <circle cx="106" cy="325" r="3.6" fill="#2F7DD1"/>
+  <rect x="116" y="321" width="82" height="7" rx="3.5" fill="#8FB7E4"/>
+  <rect x="204" y="322" width="26" height="6" rx="3" fill="#C3D6EC"/>
 
-  <rect x="276" y="315" width="140" height="20" rx="10" fill="#FFFFFF" stroke="#D7E4F4" stroke-width="1.5"/>
-  <circle cx="288" cy="325" r="3.6" fill="#F0B429"/>
-  <rect x="298" y="321" width="72" height="7" rx="3.5" fill="#B9D3F2"/>
-  <rect x="376" y="322" width="26" height="6" rx="3" fill="#E6EFFA"/>
+  <rect x="254" y="315" width="140" height="20" rx="10" fill="#FFFFFF" stroke="#D7E4F4" stroke-width="1.5"/>
+  <circle cx="266" cy="325" r="3.6" fill="#F0B429"/>
+  <rect x="276" y="321" width="72" height="7" rx="3.5" fill="#B9D3F2"/>
+  <rect x="354" y="322" width="26" height="6" rx="3" fill="#E6EFFA"/>
 
-  <rect x="426" y="315" width="128" height="20" rx="10" fill="#FFFFFF" stroke="#D7E4F4" stroke-width="1.5"/>
-  <circle cx="438" cy="325" r="3.6" fill="#2F7DD1"/>
-  <rect x="448" y="321" width="62" height="7" rx="3.5" fill="#B9D3F2"/>
-  <rect x="516" y="322" width="26" height="6" rx="3" fill="#E6EFFA"/>
+  <rect x="404" y="315" width="128" height="20" rx="10" fill="#FFFFFF" stroke="#D7E4F4" stroke-width="1.5"/>
+  <circle cx="416" cy="325" r="3.6" fill="#2F7DD1"/>
+  <rect x="426" y="321" width="62" height="7" rx="3.5" fill="#B9D3F2"/>
+  <rect x="494" y="322" width="26" height="6" rx="3" fill="#E6EFFA"/>
 
   <!-- close the live bar -->
   <path d="m608 320 8 8m0-8-8 8" stroke="#C3D6EC" stroke-width="2" stroke-linecap="round"/>

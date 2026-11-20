@@ -75,6 +75,16 @@ window.__ModuleLoader__.load({
     /** The collapsed settings block the header's settings toggle opens. */
     const SETTINGS_ID = PANEL_ID + '-settings';
     const BAR_ID = 'dsh-recent-sessions-activity-bar';
+    /** The bar's child list, portalled so it never adds height to the strip. */
+    const BAR_POP_ID = BAR_ID + '-list';
+    /**
+     * How long a session that stopped working keeps its row on the strip. A
+     * finished session is at its most useful right after it ends, so the bar
+     * must not drop it the instant the state flips.
+     */
+    const BAR_LINGER_MS = 30 * 60 * 1000;
+    /** id -> the last moment the strip saw that session working (page-local). */
+    const barLastActiveAt = new Map();
 
     const MODES = ['fold', 'hide', 'separate'];
     /** Day windows the sheet offers; 0 keeps every session regardless of age. */
@@ -150,18 +160,18 @@ window.__ModuleLoader__.load({
         'bar.off': '关闭',
         'bar.on.hint': '在窗口底部常驻一条会话栏：进行中、等待确认和已完成未读的会话都在这里',
         'bar.off.hint': '不显示底部进行中栏',
-        'bar.region': '进行中与未读会话',
+        'bar.region': '进行中、未读与刚结束的会话',
         'bar.empty': '暂无进行中或未读的会话',
         'bar.seg.running': '{count} 个进行中',
         'bar.seg.waiting': '{count} 个待确认',
         'bar.seg.done': '{count} 个未读',
         'bar.doneLabel': '已完成未读',
         'bar.hide': '关闭进行中栏',
-        'bar.expand': '展开',
-        'bar.expand.hint': '上拉列出全部进行中的会话',
-        'bar.collapse': '收起',
-        'bar.collapse.hint': '收起进行中会话列表',
-        'bar.list': '进行中与未读会话',
+        'bar.expandList': '展开会话列表',
+        'bar.collapseList': '收起会话列表',
+        'bar.seg.linger': '{count} 个刚结束',
+        'bar.linger': '刚刚结束',
+        'bar.list': '进行中、未读与刚结束的会话',
         'bar.menuHint': '右键更多操作',
         'bar.pinned': '已固定',
         'bar.childRunning': '子代理运行中',
@@ -238,18 +248,18 @@ window.__ModuleLoader__.load({
         'bar.off': 'Off',
         'bar.on.hint': 'Keep a session bar at the bottom of the window: running, waiting and finished-unread sessions',
         'bar.off.hint': 'Do not show the bottom live bar',
-        'bar.region': 'Sessions in progress and unread',
+        'bar.region': 'Sessions in progress, unread and just finished',
         'bar.empty': 'Nothing running or unread',
         'bar.seg.running': '{count} running',
         'bar.seg.waiting': '{count} waiting',
         'bar.seg.done': '{count} unread',
         'bar.doneLabel': 'Finished, unread',
         'bar.hide': 'Close the live bar',
-        'bar.expand': 'Expand',
-        'bar.expand.hint': 'Pull up every session in progress',
-        'bar.collapse': 'Collapse',
-        'bar.collapse.hint': 'Collapse the list of sessions in progress',
-        'bar.list': 'Sessions in progress and unread',
+        'bar.expandList': 'Expand the session list',
+        'bar.collapseList': 'Collapse the session list',
+        'bar.seg.linger': '{count} just finished',
+        'bar.linger': 'Just finished',
+        'bar.list': 'Sessions in progress, unread and just finished',
         'bar.menuHint': 'Right-click for actions',
         'bar.pinned': 'Pinned',
         'bar.childRunning': 'Subagent running',
@@ -528,6 +538,10 @@ window.__ModuleLoader__.load({
       const localeId = input.localeId;
       const countOnly = input.countOnly === true;
       const ongoingOnly = input.ongoingOnly === true;
+      // Bar-only: the page-local record of when each session was last seen
+      // working, so a row can outlive its state by a grace period.
+      const linger = input.linger instanceof Map ? input.linger : null;
+      const lingerMs = typeof input.lingerMs === 'number' && input.lingerMs > 0 ? input.lingerMs : BAR_LINGER_MS;
       const query = typeof input.query === 'string' ? input.query : '';
       const terms = searchTerms(query);
       const searching = terms.length > 0;
@@ -804,6 +818,33 @@ window.__ModuleLoader__.load({
         ranked.sort((a, b) => (a.bucket - b.bucket) || (b.rank - a.rank));
         for (const item of ranked) rows.push(item.row);
 
+        // Sessions that just stopped working stay for a grace period as idle
+        // rows: the strip answers "what was I running a moment ago" without
+        // keeping finished work forever. Only the bar draws them, never the
+        // sheet, and a session that starts again re-enters the ranked rows
+        // above, so it can never be listed twice.
+        if (ongoingOnly && linger !== null && linger.size > 0) {
+          const nowMs = Date.now();
+          const listed = new Set(rows.map(row => row.id));
+          const lingering = [];
+          for (const [id, stamp] of linger) {
+            if (listed.has(id) || pinnedSet.has(id)) continue;
+            if (typeof stamp !== 'number' || nowMs - stamp > lingerMs) continue;
+            const entry = index.get(id);
+            if (entry === undefined) continue;
+            // Only the modes that list this session may keep its row: hide drops
+            // subagents, and fold paints them inside their main session.
+            if (entry.subagent && mode !== 'separate') continue;
+            const built = barRow(entry, false);
+            // Not idle means the session is working again and is already listed.
+            if (built.bucket !== 3) continue;
+            built.row.linger = true;
+            lingering.push({ row: built.row, rank: built.rank, stamp });
+          }
+          lingering.sort((a, b) => (b.rank - a.rank) || (b.stamp - a.stamp));
+          for (const item of lingering) rows.push(item.row);
+        }
+
         return {
           rows,
           total: rows.length,
@@ -812,6 +853,7 @@ window.__ModuleLoader__.load({
           waiting: rows.filter(row => row.state === 'warning').length,
           done: rows.filter(row => row.state === 'done').length,
           running: rows.filter(row => row.state === 'ongoing').length,
+          linger: rows.filter(row => row.linger === true).length,
           pinned: rows.filter(row => row.pinned === true).length,
         };
       }
@@ -1137,19 +1179,19 @@ window.__ModuleLoader__.load({
       // the strip from its content, so the bar only owns its inner layout: one
       // row that never wraps, a scrollable chip run, and a hairline above it.
       '.rs-bar { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; min-height: 28px; padding: 0 8px 0 14px; border-top: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 12px; line-height: 18px; }',
-      // The pull-up list stacks the header over a vertically scrolling run of
-      // rows; the grid keeps the lead left and the controls right in both modes.
-      '.rs-bar[data-expanded="true"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top actions" "body body"; align-items: center; row-gap: 2px; padding: 5px 10px 7px 16px; }',
-      '.rs-bar[data-expanded="true"] .rs-bar__top { grid-area: top; }',
-      '.rs-bar[data-expanded="true"] .rs-bar__actions { grid-area: actions; }',
-      '.rs-bar[data-expanded="true"] .rs-bar__body { grid-area: body; }',
+      // The longer list is a child surface (below): the strip itself always
+      // stays one 28px row, so opening it never resizes the columns above it.
       '.rs-bar__top { flex: none; display: inline-flex; align-items: center; min-width: 0; }',
       '.rs-bar__lead { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }',
       '.rs-bar__pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }',
       '.rs-bar[data-active="true"] .rs-bar__pulse { background: var(--dsw-alias-state-business-primary); animation: rs-breathe 1.6s ease-in-out infinite; }',
       '@media (prefers-reduced-motion: reduce) { .rs-bar[data-active="true"] .rs-bar__pulse { animation: none; } }',
       '.rs-bar__label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }',
-      '.rs-bar__count { flex: none; font-size: 11px; line-height: 16px; font-weight: 600; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }',
+      '.rs-bar__countbtn { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; margin: 0; padding: 0 4px; border: none; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 11px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }',
+      '.rs-bar__countbtn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
+      '.rs-bar__countbtn[data-open="true"] { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); }',
+      '.rs-bar__countchev { display: inline-flex; align-items: center; justify-content: center; margin-left: 2px; color: var(--dsw-alias-label-tertiary); }',
+      '.rs-bar__countbtn:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }',
       '.rs-bar__body { flex: 1 1 auto; min-width: 0; }',
       '.rs-bar__list { display: flex; align-items: center; gap: 5px; overflow-x: auto; overflow-y: hidden; padding: 3px 3px; scrollbar-width: thin; }',
       '.rs-bar__list::-webkit-scrollbar { height: 6px; }',
@@ -1160,9 +1202,18 @@ window.__ModuleLoader__.load({
       '.rs-bar__chip:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }',
       '.rs-bar__title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
       '.rs-bar__pin { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); }',
-      '.rs-bar__rows { display: flex; flex-direction: column; gap: 2px; max-height: min(40vh, 260px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 3px; scrollbar-width: thin; }',
-      '.rs-bar__rows::-webkit-scrollbar { width: 8px; }',
-      '.rs-bar__rows::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l1); border-radius: 4px; }',
+      // The child list floats above the count, so the seat keeps its height and
+      // the columns below it never reflow while it is open.
+      '.rs-barpop { position: fixed; z-index: 240; display: flex; flex-direction: column; box-sizing: border-box; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md, 12px); background-color: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-overlay, var(--dsw-specific-sidebar-fill))); box-shadow: var(--dsw-elevation-prominent, 0 12px 32px rgba(0, 0, 0, 0.18)); animation: rs-panel-in 120ms ease-out; }',
+      '@media (prefers-reduced-motion: reduce) { .rs-barpop { animation: none; } }',
+      '.rs-barpop__list { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }',
+      '.rs-barpop__list::-webkit-scrollbar { width: 8px; }',
+      '.rs-barpop__list::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l1); border-radius: 4px; }',
+      // A lingering row is work that just ended: dimmed until hovered.
+      '.rs-bar__chip[data-linger="true"] { opacity: 0.62; }',
+      '.rs-bar__row[data-linger="true"] { opacity: 0.68; }',
+      '@media (hover: hover) { .rs-bar__chip[data-linger="true"]:hover, .rs-bar__row[data-linger="true"]:hover { opacity: 1; } }',
+      '.rs-bar__chip[data-linger="true"]:focus-visible, .rs-bar__row[data-linger="true"]:focus-visible { opacity: 1; }',
       '.rs-bar__row { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; padding: 4px 6px; border: none; border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-primary); font-family: inherit; text-align: left; cursor: pointer; }',
       '.rs-bar__row:hover { background: var(--dsw-alias-interactive-bg-hover); }',
       '.rs-bar__row[data-current="true"] { background: var(--dsw-alias-interactive-bg-active); }',
@@ -1171,10 +1222,6 @@ window.__ModuleLoader__.load({
       '.rs-bar__rowtitle { font-size: 12px; line-height: 17px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
       '.rs-bar__rowmeta { font-size: 11px; line-height: 15px; color: var(--dsw-alias-label-tertiary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }',
       '.rs-bar__actions { flex: none; display: inline-flex; align-items: center; gap: 2px; }',
-      '.rs-bar__toggle { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: var(--dsw-radius-xs, 4px); background: transparent; color: var(--dsw-alias-label-secondary); font-family: inherit; font-size: 11px; line-height: 24px; cursor: pointer; }',
-      '.rs-bar__toggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }',
-      '.rs-bar__toggle:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: -2px; }',
-      '.rs-bar__toggle svg { flex: none; }',
       '.rs-bar__hide { margin-left: 2px; }',
     ].join('\n');
 
@@ -1712,7 +1759,11 @@ window.__ModuleLoader__.load({
           localeId,
           countOnly,
           ongoingOnly,
+          linger: barLastActiveAt,
+          lingerMs: BAR_LINGER_MS,
         }), [
+          // The linger map is read through this snapshot: it only moves when a
+          // render already re-runs (a snapshot change or the 30s clock tick).
           list, workspaceState, statuses, state.mode, state.expanded, state.now,
           state.config.maxItems, state.maxAgeDays, state.config.showWorkspace, localeId, countOnly, query,
           ongoingOnly,
@@ -1775,23 +1826,131 @@ window.__ModuleLoader__.load({
        * The `shell.bottom` strip: the sessions that are working right now —
        * running, or waiting on the user — always on screen below every column.
        *
-       * It keeps its height once enabled, even with nothing in flight: a strip
-       * that appears and disappears would resize all three columns mid-task.
-       * The slot entry itself only exists while the preference is on (see the
-       * registration below), so neither space nor the single seat is taken
-       * otherwise. The list ignores the sheet's Range window, row cap and
-       * search (see `buildView`), so a long run cannot be hidden by them.
+       * The strip never grows. It keeps 28px whether its list is open or not,
+       * and the longer list is a child surface opened from the count, portalled
+       * above the strip: a `shell.bottom` occupant that grew would push all
+       * three columns up, and the seat is shared with whatever else the frame
+       * or another plugin renders there.
+       *
+       * A session that stops working keeps its row for `BAR_LINGER_MS`, drawn
+       * with an idle dot: "what was running a moment ago" is the question the
+       * strip is asked right after a turn ends.
        */
       function ActivityBar(props) {
         const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot, panel.getSnapshot);
         const view = useView(props, state, { ongoingOnly: true });
-        if (!state.bar) return null;
+        const countRef = useRef(null);
+        const popRef = useRef(null);
+        const focusListRef = useRef(false);
+        const [popGeo, setPopGeo] = useState(null);
         const rows = view.rows;
         const active = rows.length > 0;
-        // A pull-up list is only offered when there is a real choice to make,
-        // and it collapses with the bar itself.
+        // The pulse is the "something is working" signal: a strip holding only
+        // lingering rows must not breathe as if work were still going on.
+        const working = rows.some(row => row.linger !== true);
         const expanded = active && state.barExpanded === true;
-        const listId = BAR_ID + '-list';
+        const listId = BAR_POP_ID;
+        const rowSignature = rows.map(row => row.id + ':' + row.state).join('|');
+
+        // Stamp the sessions that are working, and keep the clock running while
+        // the strip exists: the stamp is the last moment the bar saw work (not
+        // the session's last message), and the tick is what expires a row. The
+        // map is page-local, so a reload starts from the snapshots again.
+        useEffect(() => {
+          if (state.bar !== true) return undefined;
+          const touch = () => {
+            const stamp = Date.now();
+            for (const row of rows) {
+              if (row.linger === true || row.state === 'idle') continue;
+              barLastActiveAt.set(row.id, stamp);
+            }
+            for (const [id, at] of barLastActiveAt) {
+              if (stamp - at > BAR_LINGER_MS * 4) barLastActiveAt.delete(id);
+            }
+          };
+          touch();
+          const interval = window.setInterval(() => {
+            touch();
+            panel.update(current => (current.bar ? { ...current, now: Date.now() } : current));
+          }, Math.max(5000, state.config.refreshMs));
+          return () => { window.clearInterval(interval); };
+        }, [state.bar, state.config.refreshMs, rowSignature]);
+
+        // Nothing left to list: the child surface cannot outlive its content.
+        useEffect(() => {
+          if (!active && state.barExpanded === true) setBarExpanded(false);
+        }, [active, state.barExpanded]);
+
+        // Measure the count, not the strip: the list hangs above the number it
+        // belongs to, so opening it never changes the seat's height.
+        useLayoutEffect(() => {
+          if (!expanded) {
+            setPopGeo(null);
+            return undefined;
+          }
+          const measure = () => {
+            const anchor = countRef.current;
+            if (anchor === null || typeof anchor.getBoundingClientRect !== 'function') return;
+            const rect = anchor.getBoundingClientRect();
+            if (rect.width <= 0 && rect.height <= 0) return;
+            const width = Math.round(Math.min(360, Math.max(220, window.innerWidth - 16)));
+            const maxLeft = Math.max(8, window.innerWidth - width - 8);
+            setPopGeo({
+              left: Math.round(Math.min(Math.max(8, rect.left - 8), maxLeft)),
+              width,
+              bottom: Math.round(window.innerHeight - rect.top + 8),
+              maxHeight: Math.round(Math.min(window.innerHeight * 0.4, 360)),
+            });
+          };
+          measure();
+          window.addEventListener('resize', measure);
+          return () => { window.removeEventListener('resize', measure); };
+        }, [expanded]);
+
+        // Keyboard opening hands focus to the first row; a pointer click keeps
+        // it on the number, the same split the sheet's settings toggle uses.
+        useLayoutEffect(() => {
+          if (!expanded || popGeo === null || !focusListRef.current) return;
+          focusListRef.current = false;
+          const pop = popRef.current;
+          const first = pop !== null ? pop.querySelector('button') : null;
+          if (first !== null && typeof first.focus === 'function') first.focus({ preventScroll: true });
+        }, [expanded, popGeo]);
+
+        // A click away or Escape folds the list; focus returns to the number so
+        // the keyboard never lands on a vanished element.
+        useEffect(() => {
+          if (!expanded) return undefined;
+          const close = () => {
+            setBarExpanded(false);
+            const anchor = countRef.current;
+            if (anchor !== null && typeof anchor.focus === 'function') anchor.focus({ preventScroll: true });
+          };
+          const onPointerDown = (event) => {
+            const target = event.target;
+            const pop = popRef.current;
+            const anchor = countRef.current;
+            if (pop !== null && isNode(target) && pop.contains(target)) return;
+            if (anchor !== null && isNode(target) && anchor.contains(target)) return;
+            if (isElement(target) && target.closest('[role="menu"], [data-context-menu], [data-context-menu-trigger]') !== null) return;
+            setBarExpanded(false);
+          };
+          const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            const target = event.target;
+            const sheet = document.getElementById(PANEL_ID);
+            if (sheet !== null && isNode(target) && sheet.contains(target)) return;
+            close();
+          };
+          document.addEventListener('pointerdown', onPointerDown, true);
+          document.addEventListener('keydown', onKeyDown, true);
+          return () => {
+            document.removeEventListener('pointerdown', onPointerDown, true);
+            document.removeEventListener('keydown', onKeyDown, true);
+          };
+        }, [expanded]);
+
+        if (state.bar !== true) return null;
         // The dot colours carry the state; the strip only spends width on the
         // session titles. What the count is made of stays available as a
         // tooltip and in the visually hidden live text, so nothing is lost.
@@ -1799,24 +1958,63 @@ window.__ModuleLoader__.load({
         if (view.waiting > 0) segments.push(t('bar.seg.waiting', { count: view.waiting }));
         if (view.done > 0) segments.push(t('bar.seg.done', { count: view.done }));
         if (view.running > 0) segments.push(t('bar.seg.running', { count: view.running }));
+        if (view.linger > 0) segments.push(t('bar.seg.linger', { count: view.linger }));
         const breakdown = segments.join(' · ');
         const describe = row => [
           row.title,
           row.pinned ? t('bar.pinned') : '',
           row.subagent ? t('row.subagent') : '',
           row.stateLabel,
+          row.linger === true ? t('bar.linger') : '',
           row.workspace,
         ].filter(part => typeof part === 'string' && part !== '').join(' · ');
-        const toggleLabel = t(expanded ? 'bar.collapse' : 'bar.expand');
-        return h(
+
+        /** One row of the child list: dot, optional pin, title, workspace. */
+        const renderRow = (row) => {
+          const label = describe(row);
+          return h(
+            'button',
+            {
+              key: row.id,
+              type: 'button',
+              className: 'rs-bar__row',
+              'data-current': row.current ? 'true' : 'false',
+              'data-linger': row.linger === true ? 'true' : 'false',
+              'aria-current': row.current ? 'true' : undefined,
+              title: label + ' · ' + t('bar.menuHint'),
+              'aria-label': label,
+              onClick: () => pickBar(row),
+              onContextMenu: barContextMenu(row),
+            },
+            h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+            row.pinned
+              ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
+              : null,
+            h(
+              'span',
+              { className: 'rs-bar__rowbody' },
+              h('span', { className: 'rs-bar__rowtitle' }, row.title),
+              h(
+                'span',
+                { className: 'rs-bar__rowmeta' },
+                [
+                  row.subagent ? t('row.subagent') : '',
+                  row.workspace,
+                  row.linger === true ? t('bar.linger') : '',
+                ].filter(part => typeof part === 'string' && part !== '').join(' · '),
+              ),
+            ),
+          );
+        };
+
+        const strip = h(
           'div',
           {
             id: BAR_ID,
             className: 'rs-bar',
             role: 'region',
             'aria-label': t('bar.region'),
-            'data-active': active ? 'true' : 'false',
-            'data-expanded': expanded ? 'true' : 'false',
+            'data-active': working ? 'true' : 'false',
           },
           h(
             'span',
@@ -1826,95 +2024,75 @@ window.__ModuleLoader__.load({
               { className: 'rs-bar__lead' },
               h('span', { className: 'rs-bar__pulse', 'aria-hidden': 'true' }),
               active
-                ? h('span', { className: 'rs-bar__count', 'aria-hidden': 'true' }, String(rows.length))
-                : h('span', { className: 'rs-bar__label' }, t('bar.empty')),
-              active
-                ? h('span', { className: 'rs-sr', role: 'status', 'aria-live': 'polite' }, breakdown)
-                : null,
-            ),
-          ),
-          expanded
-            ? h(
-              'div',
-              { className: 'rs-bar__body rs-bar__rows', id: listId, role: 'group', 'aria-label': t('bar.list') },
-              rows.map((row) => {
-                const label = describe(row);
-                return h(
+                ? h(
                   'button',
                   {
-                    key: row.id,
                     type: 'button',
-                    className: 'rs-bar__row',
-                    'data-current': row.current ? 'true' : 'false',
-                    'aria-current': row.current ? 'true' : undefined,
-                    title: label + ' · ' + t('bar.menuHint'),
-                    'aria-label': label,
-                    onClick: () => pickBar(row),
-                    onContextMenu: barContextMenu(row),
+                    ref: countRef,
+                    className: 'rs-bar__countbtn',
+                    'data-open': expanded ? 'true' : 'false',
+                    'aria-expanded': expanded ? 'true' : 'false',
+                    'aria-controls': expanded ? listId : undefined,
+                    'aria-label': t(expanded ? 'bar.collapseList' : 'bar.expandList') + ' · ' + rows.length,
+                    title: t(expanded ? 'bar.collapseList' : 'bar.expandList') + (breakdown === '' ? '' : ' · ' + breakdown),
+                    onClick: (event) => {
+                      const next = !expanded;
+                      focusListRef.current = next && event.detail === 0;
+                      setBarExpanded(next);
+                    },
+                    onKeyDown: (event) => {
+                      if (!expanded || event.key !== 'Tab' || event.shiftKey) return;
+                      const pop = popRef.current;
+                      const first = pop !== null ? pop.querySelector('button') : null;
+                      if (first === null) return;
+                      event.preventDefault();
+                      first.focus({ preventScroll: true });
+                    },
                   },
-                  h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
-                  row.pinned
-                    ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
-                    : null,
+                  String(rows.length),
                   h(
                     'span',
-                    { className: 'rs-bar__rowbody' },
-                    h('span', { className: 'rs-bar__rowtitle' }, row.title),
-                    h(
-                      'span',
-                      { className: 'rs-bar__rowmeta' },
-                      [row.subagent ? t('row.subagent') : '', row.workspace]
-                        .filter(part => typeof part === 'string' && part !== '').join(' · '),
-                    ),
+                    { className: 'rs-bar__countchev', 'aria-hidden': 'true' },
+                    icon(expanded ? 'chevronDown' : 'chevronUp', 10),
                   ),
-                );
-              }),
-            )
-            : h(
-              'div',
-              { className: 'rs-bar__body rs-bar__list', id: listId, role: 'group', 'aria-label': t('bar.list') },
-              rows.map((row) => {
-                const label = describe(row);
-                return h(
-                  'button',
-                  {
-                    key: row.id,
-                    type: 'button',
-                    className: 'rs-bar__chip',
-                    'data-current': row.current ? 'true' : 'false',
-                    'aria-current': row.current ? 'true' : undefined,
-                    title: label + ' · ' + t('bar.menuHint'),
-                    'aria-label': label,
-                    onClick: () => pickBar(row),
-                    onContextMenu: barContextMenu(row),
-                  },
-                  h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
-                  row.pinned
-                    ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
-                    : null,
-                  h('span', { className: 'rs-bar__title' }, row.title),
-                );
-              }),
+                )
+                : h('span', { className: 'rs-bar__label' }, t('bar.empty')),
+              h('span', { className: 'rs-sr', role: 'status', 'aria-live': 'polite' }, breakdown),
             ),
+          ),
+          h(
+            'div',
+            { className: 'rs-bar__body rs-bar__list', role: 'group', 'aria-label': t('bar.list') },
+            rows.map((row) => {
+              const label = describe(row);
+              return h(
+                'button',
+                {
+                  key: row.id,
+                  type: 'button',
+                  className: 'rs-bar__chip',
+                  // While the list is open the same sessions are tabbable
+                  // inside it; the strip must not offer a second run of stops.
+                  tabIndex: expanded ? -1 : undefined,
+                  'data-current': row.current ? 'true' : 'false',
+                  'data-linger': row.linger === true ? 'true' : 'false',
+                  'aria-current': row.current ? 'true' : undefined,
+                  title: label + ' · ' + t('bar.menuHint'),
+                  'aria-label': label,
+                  onClick: () => pickBar(row),
+                  onContextMenu: barContextMenu(row),
+                },
+                h('span', { className: 'rs-dot', 'data-state': row.state, 'aria-hidden': 'true' }),
+                row.pinned
+                  ? h('span', { className: 'rs-bar__pin', 'aria-hidden': 'true' }, icon('pin', 10))
+                  : null,
+                h('span', { className: 'rs-bar__title' }, row.title),
+              );
+            }),
+          ),
           h(
             'span',
             { className: 'rs-bar__actions' },
-            active && rows.length > 1
-              ? h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'rs-bar__toggle',
-                  'aria-expanded': expanded ? 'true' : 'false',
-                  'aria-controls': listId,
-                  title: t(expanded ? 'bar.collapse.hint' : 'bar.expand.hint'),
-                  'aria-label': toggleLabel,
-                  onClick: () => setBarExpanded(!expanded),
-                },
-                icon(expanded ? 'chevronDown' : 'chevronUp', 13),
-                h('span', { className: 'rs-bar__togglelabel' }, toggleLabel),
-              )
-              : null,
             h(
               'button',
               {
@@ -1928,6 +2106,50 @@ window.__ModuleLoader__.load({
             ),
           ),
         );
+
+        if (!expanded) return strip;
+        const list = h(
+          'div',
+          {
+            id: listId,
+            ref: popRef,
+            className: 'rs-barpop',
+            role: 'group',
+            'aria-label': t('bar.list'),
+            style: popGeo === null
+              ? { visibility: 'hidden', left: '0px', width: '220px', bottom: '0px', maxHeight: '0px' }
+              : {
+                left: popGeo.left + 'px',
+                width: popGeo.width + 'px',
+                bottom: popGeo.bottom + 'px',
+                maxHeight: popGeo.maxHeight + 'px',
+              },
+          },
+          h(
+            'div',
+            {
+              className: 'rs-barpop__list',
+              onKeyDown: (event) => {
+                if (event.key !== 'Tab') return;
+                const pop = popRef.current;
+                if (pop === null) return;
+                const items = Array.from(pop.querySelectorAll('button'));
+                if (items.length === 0) return;
+                const target = event.target;
+                const atEnd = !event.shiftKey && target === items[items.length - 1];
+                const atStart = event.shiftKey && target === items[0];
+                if (!atEnd && !atStart) return;
+                const count = countRef.current;
+                if (count === null) return;
+                event.preventDefault();
+                count.focus({ preventScroll: true });
+              },
+            },
+            rows.map(renderRow),
+          ),
+        );
+        if (createPortal === null) return h(React.Fragment, null, strip, list);
+        return h(React.Fragment, null, strip, createPortal(list, document.body));
       }
 
       /* ---- sheet ------------------------------------------------------- */
@@ -2028,8 +2250,10 @@ window.__ModuleLoader__.load({
             // Menus and toasts are portalled outside the sheet; a click there is
             // a click on one of our own actions, not a click away.
             if (isElement(target) && target.closest('[role="menu"], [data-context-menu], [data-context-menu-trigger]') !== null) return;
-            // The live bar is a sibling surface of the sheet, not a click away.
+            // The live bar is a sibling surface of the sheet, not a click away,
+            // and its child list is portalled, so it needs its own guard.
             if (isElement(target) && target.closest('#' + BAR_ID) !== null) return;
+            if (isElement(target) && target.closest('#' + BAR_POP_ID) !== null) return;
             closePanel();
           };
           const focusPanel = () => {
@@ -2059,6 +2283,15 @@ window.__ModuleLoader__.load({
               // A host text field or dialog opened from the sheet owns Escape.
               if (!inSheet && typing) return;
               event.preventDefault();
+              // The bar's list floats above the sheet, so it takes this press:
+              // one Escape must never close two layers at once, and must never
+              // leave a layer stranded because the other one owned the key.
+              if (live.barExpanded === true) {
+                setBarExpanded(false);
+                const count = document.querySelector('#' + BAR_ID + ' .rs-bar__countbtn');
+                if (count !== null && typeof count.focus === 'function') count.focus({ preventScroll: true });
+                return;
+              }
               if (live.query.trim() !== '') {
                 setQuery('');
                 if (input !== null && document.activeElement === input && typeof input.blur === 'function') {
